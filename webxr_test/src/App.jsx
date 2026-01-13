@@ -34,12 +34,12 @@ function Reticle({ onPlace, hitMatrix }) {
   const [isHit, setIsHit] = useState(false)
   
   // 根据模型的targetSize自动计算十字星大小
-  // 模型targetSize = 0.5（正常比例），十字星应该是模型的1.5-2倍大小
+  // 模型targetSize = 0.5（正常比例），十字星应该是模型的合理大小
   const MODEL_TARGET_SIZE = 0.5
-  const RETICLE_SCALE = 1.5 // 十字星相对于模型的大小倍数
+  const RETICLE_SCALE = 0.25 // 十字星相对于模型的大小倍数（缩小）
   const innerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.8 // 内圈半径
   const outerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.2 // 外圈半径
-  const centerRadius = MODEL_TARGET_SIZE * 0.8 // 中心点半径
+  const centerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.5 // 中心点半径
   const clickRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.5 // 点击区域半径
 
   useFrame(() => {
