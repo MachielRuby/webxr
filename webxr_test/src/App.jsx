@@ -661,101 +661,53 @@ function App() {
 
       setArStatus('✓ AR模式支持已确认，正在启动真正的WebXR AR...')
 
-      // 直接使用原生WebXR API启动AR会话
+      // 使用React Three Fiber的XR系统启动AR会话（它会自动管理会话）
       try {
-        const arSession = await navigator.xr.requestSession('immersive-ar', {
+        const sessionInit = {
           requiredFeatures: ['hit-test', 'local'],
-          optionalFeatures: ['dom-overlay', 'anchors'],
-        })
-
-        console.log('✅ 真正的AR会话已创建:', arSession.mode)
-        
-        if (arSession.mode !== 'immersive-ar') {
-          await arSession.end()
-          setArStatus('❌ 会话类型错误，不是AR模式')
-          return
+          optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
         }
-
-        setIsARSession(true)
-        setArStatus('✅ 真正的WebXR AR模式已启动！移动设备查看效果')
-        setShowUI(false)
-
-        // 监听会话结束
-        arSession.addEventListener('end', () => {
-          setIsARSession(false)
-          setArStatus('AR会话已结束')
-        })
-
-        // 注意：真正的AR渲染由Canvas组件内的XR系统处理
-        // 这里只需要确保会话已创建
-        await store.enterAR({
-          requiredFeatures: ['hit-test', 'local'],
-          optionalFeatures: ['dom-overlay', 'anchors'],
-        })
+        
+        console.log('正在启动AR会话，配置:', sessionInit)
+        
+        // 使用store.enterAR启动会话（让React Three Fiber管理）
+        await store.enterAR(sessionInit)
+        
+        // 等待一下让会话完全初始化
+        await new Promise(resolve => setTimeout(resolve, 100))
         
         // 验证会话类型
         const xrSession = store.getState().session
         if (xrSession) {
+          console.log('✅ XR会话已创建')
           console.log('XR会话类型:', xrSession.mode)
           console.log('XR会话特性:', xrSession.enabledFeatures)
           console.log('XR会话输入源:', xrSession.inputSources)
           
-          // 处理会话类型为 undefined 的情况
+          // 处理会话类型为 undefined 的情况（某些polyfill可能返回undefined）
           if (!xrSession.mode || xrSession.mode === undefined) {
-            const errorMsg = '会话类型是 undefined，可能是环境不支持AR或polyfill问题'
-            console.log('检测到会话类型为undefined，将启用降级模式')
-            setArStatus('⚠️ WebXR AR不可用，正在启用降级模式（摄像头流 + 手动控制）...')
-            setErrorDetails(`信息: ${errorMsg}\n会话对象: ${JSON.stringify({
-              mode: xrSession.mode,
-              enabledFeatures: xrSession.enabledFeatures,
-              inputSources: xrSession.inputSources?.length || 0
-            }, null, 2)}`)
-            
-            // 关闭会话并启用降级模式
-            try {
-              if (xrSession && typeof xrSession.end === 'function') {
-                await xrSession.end()
-              }
-            } catch (e) {
-              console.warn('关闭会话时出错（可忽略）:', e)
-            }
-            
-            // 启用降级模式
-            try {
-              await startFallbackMode()
-              console.log('降级模式已成功启动')
-            } catch (fallbackError) {
-              console.error('启用降级模式失败:', fallbackError)
-              setArStatus(`降级模式启动失败: ${fallbackError.message}`)
-            }
-            return
-          }
-          
-          if (xrSession.mode !== 'immersive-ar') {
-            console.warn('警告: 会话类型不是immersive-ar，而是:', xrSession.mode)
-            setArStatus(`警告: 当前模式是 ${xrSession.mode}，不是AR模式`)
-            
-            // 如果是VR模式，提示用户并关闭会话
-            if (xrSession.mode === 'immersive-vr') {
-              setArStatus('❌ 错误: 进入了VR模拟器模式！将启用降级模式。要使用真实AR，请：1) 访问 chrome://flags/#webxr-runtime 2) 设置为"None"禁用模拟器 3) 刷新页面重试')
-              
-              // 关闭会话
-              try {
-                if (xrSession.end) {
-                  await xrSession.end()
-                }
-              } catch (e) {
-                console.warn('关闭会话时出错:', e)
-              }
-              
-              // 启用降级模式
-              await startFallbackMode()
-              return
-            }
-          } else {
+            console.warn('⚠️ 会话类型是 undefined，可能是polyfill问题，但继续使用')
+            // 不报错，继续使用（某些polyfill可能不设置mode）
             setIsARSession(true)
-            setArStatus('AR模式已启动 ✓ (immersive-ar)')
-            // 启动AR后自动隐藏UI，保持场景干净
+            setArStatus('✅ AR模式已启动（会话类型未定义，但继续运行）')
+            setShowUI(false)
+          } else if (xrSession.mode === 'immersive-ar') {
+            // 正确的AR模式
+            setIsARSession(true)
+            setArStatus('✅ 真正的WebXR AR模式已启动！移动设备查看效果')
+            setShowUI(false)
+          } else if (xrSession.mode === 'immersive-vr') {
+            // VR模式（可能是模拟器）
+            console.warn('⚠️ 检测到VR模式，可能是模拟器')
+            setArStatus('⚠️ 检测到VR模式（可能是模拟器）。如果这不是你想要的，请关闭WebXR模拟器')
+            // 仍然继续，让用户决定
+            setIsARSession(true)
+            setShowUI(false)
+          } else {
+            // 其他模式（如inline）
+            console.log('会话模式:', xrSession.mode)
+            setIsARSession(true)
+            setArStatus(`✅ AR模式已启动（模式: ${xrSession.mode}）`)
             setShowUI(false)
           }
           
@@ -765,7 +717,13 @@ function App() {
             setArStatus('AR会话已结束')
           })
         } else {
-          setArStatus('AR会话创建失败: 会话对象为空')
+          setArStatus('⚠️ AR会话创建失败: 会话对象为空，尝试降级模式...')
+          // 如果会话创建失败，尝试降级模式
+          try {
+            await startFallbackMode()
+          } catch (fallbackError) {
+            setArStatus(`AR启动失败: ${fallbackError.message}`)
+          }
         }
       } catch (arError) {
         console.error('enterAR失败:', arError)
