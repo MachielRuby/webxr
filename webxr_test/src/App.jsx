@@ -34,12 +34,12 @@ function Reticle({ onPlace, hitMatrix }) {
   const [isHit, setIsHit] = useState(false)
   
   // 根据模型的targetSize自动计算十字星大小
-  // 模型targetSize = 0.5（正常比例），十字星应该是模型的1.5-2倍大小
+  // 模型targetSize = 0.5（正常比例），十字星应该是模型的合理大小
   const MODEL_TARGET_SIZE = 0.5
-  const RETICLE_SCALE = 1.5 // 十字星相对于模型的大小倍数
+  const RETICLE_SCALE = 0.3 // 十字星相对于模型的大小倍数（缩小到合理大小）
   const innerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.8 // 内圈半径
   const outerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.2 // 外圈半径
-  const centerRadius = MODEL_TARGET_SIZE * 0.8 // 中心点半径
+  const centerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.5 // 中心点半径
   const clickRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.5 // 点击区域半径
 
   useFrame(() => {
@@ -116,6 +116,12 @@ function LoadedModel({ url, scale = 1 }) {
   const maxDim = Math.max(size.x, size.y, size.z)
   const targetSize = 0.5 // 目标大小（米）- 正常比例
   const modelScale = (targetSize / maxDim) * scale
+  
+  // 调整模型位置，使其底部贴合地面（Y轴最低点对齐到0）
+  const center = box.getCenter(new THREE.Vector3())
+  const minY = box.min.y
+  // 将模型向下移动，使最低点对齐到Y=0（地面）
+  clonedScene.position.y = -minY * modelScale
   
   return <primitive object={clonedScene} scale={modelScale} />
 }
