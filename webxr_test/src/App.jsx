@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import './App.css'
 
 // 原生WebXR hit-test处理组件 - 使用真正的WebXR API
-function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
+function NativeWebXRHitTest({ onHitMatrixUpdate }) {
   const { gl } = useThree()
   const hitTestSourceRef = useRef(null)
   const localSpaceRef = useRef(null)
@@ -18,40 +18,25 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
     const session = store.getState().session
     if (!session) return
 
-    // 等待会话完全初始化
     const initHitTest = async () => {
       try {
-        // 检查会话类型（允许undefined，某些polyfill可能不设置）
         const sessionMode = session.mode
         if (sessionMode && sessionMode !== 'immersive-ar' && sessionMode !== 'inline') {
-          console.warn('会话类型不是AR:', sessionMode)
           return
         }
 
-        console.log('🔄 开始初始化hit-test...')
-        
         viewerSpaceRef.current = await session.requestReferenceSpace('viewer')
-        console.log('✅ viewer空间已获取')
-        
         localSpaceRef.current = await session.requestReferenceSpace('local')
-        console.log('✅ local空间已获取')
-        
         hitTestSourceRef.current = await session.requestHitTestSource({ 
           space: viewerSpaceRef.current 
         })
-        console.log('✅ hit-test源已创建:', hitTestSourceRef.current)
-        
         initializedRef.current = true
-        console.log('✅ 原生WebXR hit-test已初始化完成！')
-        console.log('💡 提示：将摄像头对准有纹理的平面（如地面、桌面），等待AR系统扫描环境')
       } catch (error) {
-        console.error('初始化hit-test失败:', error)
         initializedRef.current = false
       }
     }
 
-    // 延迟初始化，确保会话完全准备好
-    const timer = setTimeout(initHitTest, 100)
+    const timer = setTimeout(initHitTest, 200)
     
     return () => {
       clearTimeout(timer)
@@ -59,7 +44,7 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
         try {
           hitTestSourceRef.current.cancel()
         } catch (e) {
-          console.warn('取消hit-test源失败:', e)
+          // 忽略错误
         }
         hitTestSourceRef.current = null
       }
@@ -67,48 +52,17 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
     }
   }, [gl])
 
-  // 调试计数器
-  const debugCounterRef = useRef(0)
-  const lastHitCountRef = useRef(0)
-
-  // 在每一帧中执行hit-test（使用useFrame更可靠）
+  // 在每一帧中执行hit-test
   useFrame((state, delta, frame) => {
     if (!initializedRef.current || !hitTestSourceRef.current || !localSpaceRef.current) {
-      // 每60帧打印一次调试信息
-      if (debugCounterRef.current % 60 === 0) {
-        console.log('🔍 Hit-test状态检查:', {
-          initialized: initializedRef.current,
-          hasHitTestSource: !!hitTestSourceRef.current,
-          hasLocalSpace: !!localSpaceRef.current,
-          hasGL: !!state.gl,
-          isPresenting: state.gl?.xr?.isPresenting
-        })
-      }
-      debugCounterRef.current++
       return
     }
 
     try {
-      // 获取当前XR帧
       const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
-      if (!xrFrame) {
-        // 每60帧打印一次调试信息
-        if (debugCounterRef.current % 60 === 0) {
-          console.log('⚠️ 无法获取XR帧')
-        }
-        debugCounterRef.current++
-        return
-      }
+      if (!xrFrame) return
 
       const hitTestResults = xrFrame.getHitTestResults(hitTestSourceRef.current)
-      
-      // 打印hit-test结果（每30帧一次，避免刷屏）
-      if (debugCounterRef.current % 30 === 0) {
-        console.log('🎯 Hit-test结果:', {
-          resultsCount: hitTestResults.length,
-          hasResults: hitTestResults.length > 0
-        })
-      }
       
       if (hitTestResults.length > 0) {
         const hit = hitTestResults[0]
@@ -117,29 +71,13 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
         if (hitPose) {
           const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix)
           onHitMatrixUpdate(matrix)
-          
-          // 成功检测到平面时打印一次
-          if (lastHitCountRef.current === 0) {
-            console.log('✅ 检测到平面！十字准星应该显示')
-          }
-          lastHitCountRef.current = hitTestResults.length
         } else {
-          console.warn('⚠️ Hit-test有结果但无法获取pose')
           onHitMatrixUpdate(null)
         }
       } else {
-        // 从有结果变为无结果时打印
-        if (lastHitCountRef.current > 0) {
-          console.log('⚠️ 未检测到平面，请将摄像头对准有纹理的表面（如地面、桌面）')
-        }
-        lastHitCountRef.current = 0
         onHitMatrixUpdate(null)
       }
-      
-      debugCounterRef.current++
     } catch (error) {
-      // 打印错误详情
-      console.error('❌ 执行hit-test时出错:', error)
       onHitMatrixUpdate(null)
     }
   })
@@ -158,16 +96,11 @@ const store = createXRStore({
 function Reticle({ onPlace, hitMatrix }) {
   const ref = useRef()
   const [isHit, setIsHit] = useState(false)
-  const debugCounterRef = useRef(0)
 
   useFrame(() => {
     if (!ref.current) return
     
-    // 如果有hit-test矩阵（从原生WebXR获取），更新位置
     if (hitMatrix) {
-      if (!ref.current.visible) {
-        console.log('✅ 十字准星已显示')
-      }
       ref.current.visible = true
       ref.current.matrix.copy(hitMatrix)
       ref.current.matrix.decompose(
@@ -177,14 +110,9 @@ function Reticle({ onPlace, hitMatrix }) {
       )
       setIsHit(true)
     } else {
-      // 每60帧打印一次调试信息
-      if (debugCounterRef.current % 60 === 0 && ref.current.visible) {
-        console.log('⚠️ 十字准星已隐藏（未检测到平面）')
-      }
       ref.current.visible = false
       setIsHit(false)
     }
-    debugCounterRef.current++
   })
 
   // 也使用useXRHitTest作为备用（如果原生方式不可用）
@@ -617,9 +545,7 @@ function App() {
   const cameraPoseRef = useRef({ position: [0, 0, 0], rotation: [0, 0, 0] }) // 摄像头位姿
   const [showUI, setShowUI] = useState(true) // 控制UI显示/隐藏，未启动AR时默认显示
   const anchorsRef = useRef(new Map()) // 存储WebXR锚点
-  const hitMatrixRef = useRef(null) // 存储当前hit-test矩阵（从原生WebXR获取）
-  const hitTestSourceRef = useRef(null) // 存储hit-test源
-  const xrFrameRef = useRef(null) // 存储当前XR帧
+  const [hitMatrix, setHitMatrix] = useState(null) // 存储当前hit-test矩阵（使用state触发重新渲染）
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -1083,7 +1009,7 @@ function App() {
         : new THREE.Vector3(position.x || 0, position.y || 0, position.z || 0)
     
     let anchor = null
-    let hitMatrix = null
+    let fixedHitMatrix = null
     
     // 如果是在真正的AR模式下，尝试创建WebXR锚点或保存固定矩阵
     if (isARSession && !useFallbackMode) {
@@ -1110,65 +1036,50 @@ function App() {
             }
             
             // 如果锚点创建失败，尝试使用位置创建
-            if (!anchor && session.requestAnchor) {
+            if (!anchor && session.requestAnchor && hitMatrix) {
               try {
-                // 从当前hitMatrix获取位置
-                if (hitMatrixRef.current) {
-                  const matrix = hitMatrixRef.current
-                  const fixedPos = new THREE.Vector3().setFromMatrixPosition(matrix)
-                  
-                  // 创建变换矩阵
-                  const anchorMatrix = new Float32Array(16)
-                  matrix.toArray(anchorMatrix)
-                  
-                  anchor = await session.requestAnchor(referenceSpace, { 
-                    pose: { transform: { matrix: anchorMatrix } } 
-                  })
-                  if (anchor) {
-                    const anchorId = Date.now()
-                    anchorsRef.current.set(anchorId, anchor)
-                    console.log('✅ WebXR锚点已创建（基于位置）')
-                  }
+                const matrix = hitMatrix
+                const fixedPos = new THREE.Vector3().setFromMatrixPosition(matrix)
+                
+                // 创建变换矩阵
+                const anchorMatrix = new Float32Array(16)
+                matrix.toArray(anchorMatrix)
+                
+                anchor = await session.requestAnchor(referenceSpace, { 
+                  pose: { transform: { matrix: anchorMatrix } } 
+                })
+                if (anchor) {
+                  const anchorId = Date.now()
+                  anchorsRef.current.set(anchorId, anchor)
                 }
               } catch (error) {
-                console.warn('使用位置创建锚点失败:', error)
+                // 忽略错误
               }
             }
           }
           
           // 如果锚点创建失败，使用固定矩阵（降级方案）
-          if (!anchor && hitMatrixRef.current) {
-            hitMatrix = hitMatrixRef.current.clone()
-            console.log('✅ 使用固定矩阵锚定模型（降级方案）')
+          if (!anchor && hitMatrix) {
+            fixedHitMatrix = hitMatrix.clone()
           }
         } catch (error) {
-          console.warn('创建锚点失败，使用固定矩阵:', error)
           // 降级：使用当前hit-test矩阵
-          if (hitMatrixRef.current) {
-            hitMatrix = hitMatrixRef.current.clone()
+          if (hitMatrix) {
+            fixedHitMatrix = hitMatrix.clone()
           }
         }
       }
     }
     
-    const objectId = Date.now()
-    console.log('🎯 放置对象:', {
-      id: objectId,
-      position: [pos.x, pos.y, pos.z],
-      hasAnchor: !!anchor,
-      hasHitMatrix: !!hitMatrix,
-      anchored: useFallbackMode || !!anchor || !!hitMatrix
-    })
-    
     setObjects(prev => [
       ...prev, 
       { 
-        id: objectId,
+        id: Date.now(),
         type: objectType, 
         position: [pos.x, pos.y, pos.z],
-        anchored: useFallbackMode || !!anchor || !!hitMatrix, // 降级模式或WebXR锚点
-        anchor: anchor, // WebXR锚点对象
-        hitMatrix: hitMatrix, // 原生hit-test矩阵（固定位置）
+        anchored: useFallbackMode || !!anchor || !!fixedHitMatrix,
+        anchor: anchor,
+        hitMatrix: fixedHitMatrix,
         modelUrl: objectType === 'model' ? modelUrl : null
       }
     ])
@@ -1480,8 +1391,7 @@ function App() {
             {/* 原生WebXR hit-test处理组件 */}
             {isARSession && !useFallbackMode && (
               <NativeWebXRHitTest 
-                onHitMatrixUpdate={(matrix) => { hitMatrixRef.current = matrix }}
-                onPlace={handlePlace}
+                onHitMatrixUpdate={setHitMatrix}
               />
             )}
             
