@@ -101,9 +101,9 @@ function Reticle({ onPlace, hitMatrix }) {
   )
 }
 
-// 默认模型URL（可以使用任何GLTF/GLB模型）
-// 这里使用Three.js示例中的鸭子模型，你也可以替换为任何GLTF/GLB模型的URL
-const DEFAULT_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Duck/glTF-Binary/Duck.glb'
+// 默认模型URL（使用本地assets目录下的模型）
+import modelGlb from './assets/model.glb'
+const DEFAULT_MODEL_URL = modelGlb
 
 // 加载3D模型组件
 function LoadedModel({ url, scale = 1 }) {
