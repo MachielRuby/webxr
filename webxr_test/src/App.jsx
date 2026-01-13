@@ -1433,9 +1433,7 @@ function App() {
 
             {/* 只在真实AR模式下使用Reticle */}
             {!useFallbackMode && (
-              <>
-                <Reticle onPlace={handlePlace} hitMatrix={hitMatrixRef.current} />
-              </>
+              <Reticle onPlace={handlePlace} hitMatrix={hitMatrix} />
             )}
             
             {/* 降级模式下的十字准星 */}
