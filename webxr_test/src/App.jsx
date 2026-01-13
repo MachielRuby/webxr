@@ -116,7 +116,7 @@ function LoadedModel({ url, scale = 1 }) {
   const box = new THREE.Box3().setFromObject(clonedScene)
   const size = box.getSize(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z)
-  const targetSize = 0.5 // 目标大小（米）
+  const targetSize = 0.025 // 目标大小（米）- 缩小20倍：0.5 / 20 = 0.025
   const modelScale = (targetSize / maxDim) * scale
   
   return <primitive object={clonedScene} scale={modelScale} />
