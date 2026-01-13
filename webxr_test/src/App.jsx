@@ -5,82 +5,17 @@ import { OrbitControls, Grid, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
 
-// 原生WebXR hit-test处理组件 - 使用真正的WebXR API
+// 使用React Three XR的useXRHitTest hook（更可靠）
 function NativeWebXRHitTest({ onHitMatrixUpdate }) {
-  const { gl } = useThree()
-  const hitTestSourceRef = useRef(null)
-  const localSpaceRef = useRef(null)
-  const viewerSpaceRef = useRef(null)
-  const initializedRef = useRef(false)
-
-  // 初始化hit-test
-  useEffect(() => {
-    const session = store.getState().session
-    if (!session) return
-
-    const initHitTest = async () => {
-      try {
-        const sessionMode = session.mode
-        if (sessionMode && sessionMode !== 'immersive-ar' && sessionMode !== 'inline') {
-          return
-        }
-
-        viewerSpaceRef.current = await session.requestReferenceSpace('viewer')
-        localSpaceRef.current = await session.requestReferenceSpace('local')
-        hitTestSourceRef.current = await session.requestHitTestSource({ 
-          space: viewerSpaceRef.current 
-        })
-        initializedRef.current = true
-      } catch (error) {
-        initializedRef.current = false
-      }
-    }
-
-    const timer = setTimeout(initHitTest, 200)
-    
-    return () => {
-      clearTimeout(timer)
-      if (hitTestSourceRef.current) {
-        try {
-          hitTestSourceRef.current.cancel()
-        } catch (e) {
-          // 忽略错误
-        }
-        hitTestSourceRef.current = null
-      }
-      initializedRef.current = false
-    }
-  }, [gl])
-
-  // 在每一帧中执行hit-test
-  useFrame((state, delta, frame) => {
-    if (!initializedRef.current || !hitTestSourceRef.current || !localSpaceRef.current) {
-      return
-    }
-
-    try {
-      const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
-      if (!xrFrame) return
-
-      const hitTestResults = xrFrame.getHitTestResults(hitTestSourceRef.current)
-      
-      if (hitTestResults.length > 0) {
-        const hit = hitTestResults[0]
-        const hitPose = hit.getPose(localSpaceRef.current)
-        
-        if (hitPose) {
-          const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix)
-          onHitMatrixUpdate(matrix)
-        } else {
-          onHitMatrixUpdate(null)
-        }
-      } else {
-        onHitMatrixUpdate(null)
-      }
-    } catch (error) {
+  useXRHitTest((results, getWorldMatrix) => {
+    if (results.length > 0) {
+      const matrix = new THREE.Matrix4()
+      getWorldMatrix(matrix, results[0])
+      onHitMatrixUpdate(matrix)
+    } else {
       onHitMatrixUpdate(null)
     }
-  })
+  }, 'viewer')
 
   return null
 }
@@ -115,21 +50,6 @@ function Reticle({ onPlace, hitMatrix }) {
     }
   })
 
-  // 也使用useXRHitTest作为备用（如果原生方式不可用）
-  useXRHitTest((results, getWorldMatrix) => {
-    if (results.length > 0 && !hitMatrix) {
-      if (ref.current) {
-        ref.current.visible = true
-        getWorldMatrix(ref.current.matrix, results[0])
-        setIsHit(true)
-      }
-    } else if (results.length === 0 && !hitMatrix) {
-      if (ref.current) {
-        ref.current.visible = false
-      }
-      setIsHit(false)
-    }
-  }, 'viewer')
 
   return (
     <group ref={ref} visible={false}>
@@ -1388,7 +1308,7 @@ function App() {
             </>
           )}
           <XR store={store}>
-            {/* 原生WebXR hit-test处理组件 */}
+            {/* 原生WebXR hit-test处理组件 - 必须在XR内部 */}
             {isARSession && !useFallbackMode && (
               <NativeWebXRHitTest 
                 onHitMatrixUpdate={setHitMatrix}
@@ -1429,7 +1349,13 @@ function App() {
               </Suspense>
             )}
             
-            {/* AR模式下：不自动放置模型，必须点击屏幕放置（这样模型才能锚定在真实世界） */}
+            {/* AR模式下：添加一个测试立方体，验证渲染是否正常 */}
+            {isARSession && !useFallbackMode && (
+              <mesh position={[0, 0, -1]}>
+                <boxGeometry args={[0.2, 0.2, 0.2]} />
+                <meshStandardMaterial color="red" />
+              </mesh>
+            )}
 
             {/* 只在真实AR模式下使用Reticle */}
             {!useFallbackMode && (
