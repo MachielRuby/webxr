@@ -7,7 +7,7 @@ import './App.css'
 
 // 使用React Three XR的useXRHitTest hook（更可靠）
 function NativeWebXRHitTest({ onHitMatrixUpdate }) {
-  // 使用useXRHitTest进行hit-test（React Three XR会自动处理会话状态）
+  // 使用useXRHitTest进行hit-test
   useXRHitTest((results, getWorldMatrix) => {
     if (results.length > 0) {
       const matrix = new THREE.Matrix4()
@@ -32,26 +32,23 @@ const store = createXRStore({
 function Reticle({ onPlace, hitMatrix }) {
   const ref = useRef()
   const [isHit, setIsHit] = useState(false)
+  
+  // 根据模型的targetSize自动计算十字星大小
+  // 模型targetSize = 0.025（缩小20倍），十字星应该是模型的1.5-2倍大小
+  const MODEL_TARGET_SIZE = 0.025
+  const RETICLE_SCALE = 1.5 // 十字星相对于模型的大小倍数
+  const innerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.8 // 内圈半径
+  const outerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.2 // 外圈半径
+  const centerRadius = MODEL_TARGET_SIZE * 0.8 // 中心点半径
+  const clickRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.5 // 点击区域半径
 
   useFrame(() => {
     if (!ref.current) return
     
     if (hitMatrix) {
       ref.current.visible = true
-      // 直接使用矩阵，确保位置和旋转都正确
+      // 直接使用hit-test矩阵，它已经包含了正确的位置和旋转
       ref.current.matrix.copy(hitMatrix)
-      
-      // 分解矩阵获取位置和旋转
-      const position = new THREE.Vector3()
-      const quaternion = new THREE.Quaternion()
-      const scale = new THREE.Vector3()
-      ref.current.matrix.decompose(position, quaternion, scale)
-      
-      // 稍微抬高一点，确保十字准星在平面上方（而不是嵌入平面）
-      position.y += 0.01
-      
-      // 重新组合矩阵
-      ref.current.matrix.compose(position, quaternion, scale)
       ref.current.matrixAutoUpdate = false
       setIsHit(true)
     } else {
@@ -64,19 +61,19 @@ function Reticle({ onPlace, hitMatrix }) {
   return (
     <group ref={ref} visible={false}>
       {/* Visual Ring - 贴合地面的十字准星 */}
-      {/* 使用子group来应用旋转，让ring平行于地面 */}
-      <group rotation-x={-Math.PI / 2}>
+      {/* hit-test矩阵已经包含了正确的旋转，直接使用即可 */}
+      <group>
         <mesh>
-          <ringGeometry args={[0.15, 0.2, 32]} />
+          <ringGeometry args={[innerRadius, outerRadius, 32]} />
           <meshStandardMaterial 
             color="white" 
             emissive={0xffffff}
             emissiveIntensity={0.5}
           />
         </mesh>
-        {/* 中心点 */}
-        <mesh position={[0, 0.01, 0]}>
-          <circleGeometry args={[0.05, 32]} />
+        {/* 中心点 - 几乎贴地 */}
+        <mesh position={[0, 0.001, 0]}>
+          <circleGeometry args={[centerRadius, 32]} />
           <meshStandardMaterial 
             color="white" 
             emissive={0xffffff}
@@ -93,7 +90,7 @@ function Reticle({ onPlace, hitMatrix }) {
             }
           }}
         >
-          <circleGeometry args={[0.2, 32]} />
+          <circleGeometry args={[clickRadius, 32]} />
           <meshBasicMaterial visible={false} />
         </mesh>
       </group>
