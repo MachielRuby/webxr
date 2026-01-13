@@ -34,8 +34,8 @@ function Reticle({ onPlace, hitMatrix }) {
   const [isHit, setIsHit] = useState(false)
   
   // 根据模型的targetSize自动计算十字星大小
-  // 模型targetSize = 0.025（缩小20倍），十字星应该是模型的1.5-2倍大小
-  const MODEL_TARGET_SIZE = 1
+  // 模型targetSize = 0.5（正常比例），十字星应该是模型的1.5-2倍大小
+  const MODEL_TARGET_SIZE = 0.5
   const RETICLE_SCALE = 1.5 // 十字星相对于模型的大小倍数
   const innerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.8 // 内圈半径
   const outerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.2 // 外圈半径
@@ -114,7 +114,7 @@ function LoadedModel({ url, scale = 1 }) {
   const box = new THREE.Box3().setFromObject(clonedScene)
   const size = box.getSize(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z)
-  const targetSize = 0.025 // 目标大小（米）- 缩小20倍：0.5 / 20 = 0.025
+  const targetSize = 0.5 // 目标大小（米）- 正常比例
   const modelScale = (targetSize / maxDim) * scale
   
   return <primitive object={clonedScene} scale={modelScale} />
