@@ -138,7 +138,7 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
   useFrame((state, delta, frame) => {
     if (!groupRef.current) return
     
-    // 优先使用WebXR锚点（最准确，能跟踪真实世界变化）
+    // 优先使用WebXR锚点（最准确）
     if (anchor?.anchorSpace) {
       try {
         const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
@@ -148,9 +148,13 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
             const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
             if (pose) {
               // 从WebXR锚点获取当前帧的位置（锚点会跟踪真实世界）
-              // 直接使用矩阵，避免分解/组合导致的精度损失
               const matrix = new THREE.Matrix4().fromArray(pose.transform.matrix)
               groupRef.current.matrix.copy(matrix)
+              groupRef.current.matrix.decompose(
+                groupRef.current.position,
+                groupRef.current.quaternion,
+                groupRef.current.scale
+              )
               groupRef.current.matrixAutoUpdate = false
               return
             }
@@ -163,17 +167,21 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
     }
     
     // 使用保存的固定矩阵（模型固定在真实世界中）
-    // 注意：固定矩阵在WebXR中应该保持在创建时的参考空间中
     if (fixedMatrixRef.current) {
+      // 需要将固定矩阵转换到当前参考空间
+      // 在WebXR中，如果矩阵是在local空间中创建的，它会自动保持在真实世界中的位置
       const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
       if (xrFrame) {
         try {
           const referenceSpace = gl.xr?.getReferenceSpace()
           if (referenceSpace) {
-            // 在WebXR中，如果矩阵是在local/local-floor参考空间中创建的，
-            // 它会自动保持在真实世界中的位置，直接使用即可
-            // 直接使用矩阵，避免分解/组合导致的精度损失
+            // 固定矩阵已经是世界空间的，直接使用
             groupRef.current.matrix.copy(fixedMatrixRef.current)
+            groupRef.current.matrix.decompose(
+              groupRef.current.position,
+              groupRef.current.quaternion,
+              groupRef.current.scale
+            )
             groupRef.current.matrixAutoUpdate = false
             return
           }
@@ -182,8 +190,13 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
         }
       }
       
-      // 降级：直接使用固定矩阵（非WebXR环境）
+      // 降级：直接使用固定矩阵
       groupRef.current.matrix.copy(fixedMatrixRef.current)
+      groupRef.current.matrix.decompose(
+        groupRef.current.position,
+        groupRef.current.quaternion,
+        groupRef.current.scale
+      )
       groupRef.current.matrixAutoUpdate = false
       return
     }
@@ -192,6 +205,11 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
     if (anchor?.matrix) {
       const matrix = new THREE.Matrix4().fromArray(anchor.matrix)
       groupRef.current.matrix.copy(matrix)
+      groupRef.current.matrix.decompose(
+        groupRef.current.position,
+        groupRef.current.quaternion,
+        groupRef.current.scale
+      )
       groupRef.current.matrixAutoUpdate = false
     }
   })
@@ -929,39 +947,33 @@ function App() {
       if (session) {
         try {
           // 优先尝试创建WebXR锚点（最准确，能跟踪真实世界）
-          // requestReferenceSpace是异步函数，需要await
-          let referenceSpace = null
-          try {
-            referenceSpace = await session.requestReferenceSpace('local-floor')
-          } catch (e) {
-            try {
-              referenceSpace = await session.requestReferenceSpace('local')
-            } catch (e2) {
-              console.warn('无法获取参考空间:', e2)
-            }
-          }
+          const referenceSpace = session.requestReferenceSpace('local-floor') 
+            || session.requestReferenceSpace('local')
           
           if (referenceSpace) {
-            // 如果有hit-test结果，使用它创建锚点（最精确）
+            // 如果有hit-test结果，使用它创建锚点
             if (hitTestResult && session.requestAnchor) {
               try {
                 anchor = await session.requestAnchor(hitTestResult, referenceSpace)
                 if (anchor) {
                   const anchorId = Date.now()
                   anchorsRef.current.set(anchorId, anchor)
-                  console.log('✅ WebXR锚点已创建（基于hit-test，最精确）')
+                  console.log('✅ WebXR锚点已创建（基于hit-test）')
                 }
               } catch (error) {
                 console.warn('使用hit-test创建锚点失败，尝试使用位置:', error)
               }
             }
             
-            // 如果锚点创建失败，尝试使用hitMatrix创建锚点
+            // 如果锚点创建失败，尝试使用位置创建
             if (!anchor && session.requestAnchor && hitMatrix) {
               try {
-                // 使用hitMatrix创建锚点，确保在正确的参考空间中
+                const matrix = hitMatrix
+                const fixedPos = new THREE.Vector3().setFromMatrixPosition(matrix)
+                
+                // 创建变换矩阵
                 const anchorMatrix = new Float32Array(16)
-                hitMatrix.toArray(anchorMatrix)
+                matrix.toArray(anchorMatrix)
                 
                 anchor = await session.requestAnchor(referenceSpace, { 
                   pose: { transform: { matrix: anchorMatrix } } 
@@ -969,22 +981,18 @@ function App() {
                 if (anchor) {
                   const anchorId = Date.now()
                   anchorsRef.current.set(anchorId, anchor)
-                  console.log('✅ WebXR锚点已创建（基于hitMatrix）')
                 }
               } catch (error) {
-                console.warn('使用hitMatrix创建锚点失败:', error)
+                // 忽略错误
               }
             }
           }
           
           // 如果锚点创建失败，使用固定矩阵（降级方案）
-          // 固定矩阵在WebXR中会保持在创建时的参考空间中
           if (!anchor && hitMatrix) {
             fixedHitMatrix = hitMatrix.clone()
-            console.log('⚠️ 锚点创建失败，使用固定矩阵（精度可能略低）')
           }
         } catch (error) {
-          console.error('创建锚点过程中出错:', error)
           // 降级：使用当前hit-test矩阵
           if (hitMatrix) {
             fixedHitMatrix = hitMatrix.clone()
