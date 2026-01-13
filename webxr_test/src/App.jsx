@@ -7,6 +7,7 @@ import './App.css'
 
 // 使用React Three XR的useXRHitTest hook（更可靠）
 function NativeWebXRHitTest({ onHitMatrixUpdate }) {
+  // 使用useXRHitTest进行hit-test（React Three XR会自动处理会话状态）
   useXRHitTest((results, getWorldMatrix) => {
     if (results.length > 0) {
       const matrix = new THREE.Matrix4()
@@ -1157,25 +1158,33 @@ function App() {
               <div style={{ 
                 marginTop: '10px', 
                 padding: '10px', 
-                background: 'rgba(0, 255, 0, 0.2)', 
+                background: hitMatrix ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 255, 0, 0.2)', 
                 borderRadius: '5px',
                 fontSize: '0.85em',
                 textAlign: 'left'
               }}>
-                <div style={{ marginBottom: '5px', fontWeight: 'bold' }}>💡 使用提示：</div>
-                <ol style={{ margin: '5px 0', paddingLeft: '20px', fontSize: '0.9em' }}>
-                  <li>将手机摄像头<strong>对准地面或桌面</strong></li>
-                  <li>等待几秒，让AR系统<strong>扫描环境</strong></li>
-                  <li>当看到<strong>白色圆圈（十字准星）</strong>时，说明检测到平面</li>
-                  <li><strong>点击屏幕</strong>在该位置放置3D模型</li>
-                  <li>移动手机，模型会固定在真实世界中</li>
-                </ol>
-                <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#ffc107' }}>
-                  ⚠️ 如果看不到十字准星：<br/>
-                  • 确保光线充足<br/>
-                  • 对准有纹理的表面（避免纯色）<br/>
-                  • 检查浏览器控制台的调试信息
-                </div>
+                {hitMatrix ? (
+                  <>
+                    <div style={{ marginBottom: '5px', fontWeight: 'bold', color: '#00ff00' }}>
+                      ✅ 检测到平面！白色圆圈已显示
+                    </div>
+                    <div style={{ fontSize: '0.9em' }}>
+                      <strong>点击屏幕</strong>在白色圆圈位置放置3D模型
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: '5px', fontWeight: 'bold', color: '#ffc107' }}>
+                      🔍 正在扫描环境...
+                    </div>
+                    <div style={{ fontSize: '0.9em' }}>
+                      • 将手机摄像头<strong>对准地面或桌面</strong><br/>
+                      • 缓慢移动手机，让AR系统<strong>扫描环境</strong><br/>
+                      • 确保<strong>光线充足</strong>，对准<strong>有纹理的表面</strong><br/>
+                      • 等待<strong>白色圆圈（十字准星）</strong>出现
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>
@@ -1319,8 +1328,8 @@ function App() {
             </>
           )}
           <XR store={store}>
-            {/* 原生WebXR hit-test处理组件 - 必须在XR内部 */}
-            {isARSession && !useFallbackMode && (
+            {/* 原生WebXR hit-test处理组件 - 必须在XR内部，始终渲染 */}
+            {!useFallbackMode && (
               <NativeWebXRHitTest 
                 onHitMatrixUpdate={setHitMatrix}
               />
@@ -1360,16 +1369,16 @@ function App() {
               </Suspense>
             )}
             
-            {/* AR模式下：添加一个测试立方体，验证渲染是否正常 */}
-            {isARSession && !useFallbackMode && (
-              <mesh position={[0, 0, -1]}>
-                <boxGeometry args={[0.2, 0.2, 0.2]} />
-                <meshStandardMaterial color="red" />
+            {/* AR模式下：显示提示信息 */}
+            {isARSession && !useFallbackMode && !hitMatrix && (
+              <mesh position={[0, 0.5, -1]}>
+                <planeGeometry args={[1, 0.3]} />
+                <meshBasicMaterial color="yellow" transparent opacity={0.8} side={THREE.DoubleSide} />
               </mesh>
             )}
 
-            {/* 只在真实AR模式下使用Reticle */}
-            {!useFallbackMode && (
+            {/* 只在真实AR模式下使用Reticle - 必须检测到平面才显示 */}
+            {!useFallbackMode && isARSession && (
               <Reticle onPlace={handlePlace} hitMatrix={hitMatrix} />
             )}
             
