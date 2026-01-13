@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd webxr_test && npm install && npm run build",
+  "outputDirectory": "webxr_test/dist",
+  "installCommand": "cd webxr_test && npm install",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
