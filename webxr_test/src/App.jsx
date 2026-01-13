@@ -182,35 +182,33 @@ function LoadedModel({ url, scale = 1 }) {
 }
 
 // 真正的AR锚定对象组件 - 使用WebXR空间锚点
-// 在真正的AR模式下，对象位置由WebXR系统自动管理，不需要手动更新
+// 模型必须固定在真实世界中的固定位置，移动设备时模型保持不动
 function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
   const groupRef = useRef()
   const { gl } = useThree()
+  const fixedMatrixRef = useRef(null)
   
-  useFrame(() => {
+  // 初始化时保存固定矩阵（只在第一次设置）
+  useEffect(() => {
+    if (hitMatrix && !fixedMatrixRef.current) {
+      fixedMatrixRef.current = hitMatrix.clone()
+      console.log('✅ 保存模型固定位置矩阵')
+    }
+  }, [hitMatrix])
+  
+  useFrame((state, delta, frame) => {
     if (!groupRef.current) return
     
-    // 如果有hit-test矩阵（从原生WebXR获取），直接使用
-    if (hitMatrix) {
-      groupRef.current.matrix.copy(hitMatrix)
-      groupRef.current.matrix.decompose(
-        groupRef.current.position,
-        groupRef.current.quaternion,
-        groupRef.current.scale
-      )
-      groupRef.current.matrixAutoUpdate = false
-      return
-    }
-    
-    // 如果有WebXR锚点，尝试从当前帧获取位置
+    // 优先使用WebXR锚点（最准确）
     if (anchor?.anchorSpace) {
       try {
-        const xrFrame = gl.xr?.getFrame()
+        const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
         if (xrFrame) {
           const referenceSpace = gl.xr?.getReferenceSpace()
           if (referenceSpace) {
             const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
             if (pose) {
+              // 从WebXR锚点获取当前帧的位置（锚点会跟踪真实世界）
               const matrix = new THREE.Matrix4().fromArray(pose.transform.matrix)
               groupRef.current.matrix.copy(matrix)
               groupRef.current.matrix.decompose(
@@ -224,8 +222,44 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
           }
         }
       } catch (error) {
-        // 忽略错误，使用固定位置
+        // 如果锚点获取失败，使用固定矩阵
+        console.warn('从锚点获取位置失败，使用固定矩阵:', error)
       }
+    }
+    
+    // 使用保存的固定矩阵（模型固定在真实世界中）
+    if (fixedMatrixRef.current) {
+      // 需要将固定矩阵转换到当前参考空间
+      // 在WebXR中，如果矩阵是在local空间中创建的，它会自动保持在真实世界中的位置
+      const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
+      if (xrFrame) {
+        try {
+          const referenceSpace = gl.xr?.getReferenceSpace()
+          if (referenceSpace) {
+            // 固定矩阵已经是世界空间的，直接使用
+            groupRef.current.matrix.copy(fixedMatrixRef.current)
+            groupRef.current.matrix.decompose(
+              groupRef.current.position,
+              groupRef.current.quaternion,
+              groupRef.current.scale
+            )
+            groupRef.current.matrixAutoUpdate = false
+            return
+          }
+        } catch (error) {
+          // 如果获取参考空间失败，直接使用固定矩阵
+        }
+      }
+      
+      // 降级：直接使用固定矩阵
+      groupRef.current.matrix.copy(fixedMatrixRef.current)
+      groupRef.current.matrix.decompose(
+        groupRef.current.position,
+        groupRef.current.quaternion,
+        groupRef.current.scale
+      )
+      groupRef.current.matrixAutoUpdate = false
+      return
     }
     
     // 如果锚点空间不可用，使用固定位置（从创建时的矩阵）
@@ -970,43 +1004,90 @@ function App() {
     let anchor = null
     let hitMatrix = null
     
-    // 如果是在真正的AR模式下，尝试创建WebXR锚点
+    // 如果是在真正的AR模式下，尝试创建WebXR锚点或保存固定矩阵
     if (isARSession && !useFallbackMode) {
       const session = store.getState().session
       if (session) {
         try {
-          // 获取参考空间
+          // 优先尝试创建WebXR锚点（最准确，能跟踪真实世界）
           const referenceSpace = session.requestReferenceSpace('local-floor') 
             || session.requestReferenceSpace('local')
           
           if (referenceSpace) {
-            anchor = await createXRAnchor(hitTestResult || pos, referenceSpace)
-            if (anchor) {
-              const anchorId = Date.now()
-              anchorsRef.current.set(anchorId, anchor)
-              console.log('锚点已保存，ID:', anchorId)
+            // 如果有hit-test结果，使用它创建锚点
+            if (hitTestResult && session.requestAnchor) {
+              try {
+                anchor = await session.requestAnchor(hitTestResult, referenceSpace)
+                if (anchor) {
+                  const anchorId = Date.now()
+                  anchorsRef.current.set(anchorId, anchor)
+                  console.log('✅ WebXR锚点已创建（基于hit-test）')
+                }
+              } catch (error) {
+                console.warn('使用hit-test创建锚点失败，尝试使用位置:', error)
+              }
+            }
+            
+            // 如果锚点创建失败，尝试使用位置创建
+            if (!anchor && session.requestAnchor) {
+              try {
+                // 从当前hitMatrix获取位置
+                if (hitMatrixRef.current) {
+                  const matrix = hitMatrixRef.current
+                  const fixedPos = new THREE.Vector3().setFromMatrixPosition(matrix)
+                  
+                  // 创建变换矩阵
+                  const anchorMatrix = new Float32Array(16)
+                  matrix.toArray(anchorMatrix)
+                  
+                  anchor = await session.requestAnchor(referenceSpace, { 
+                    pose: { transform: { matrix: anchorMatrix } } 
+                  })
+                  if (anchor) {
+                    const anchorId = Date.now()
+                    anchorsRef.current.set(anchorId, anchor)
+                    console.log('✅ WebXR锚点已创建（基于位置）')
+                  }
+                }
+              } catch (error) {
+                console.warn('使用位置创建锚点失败:', error)
+              }
             }
           }
           
-          // 如果有hit-test矩阵，保存它
+          // 如果锚点创建失败，使用固定矩阵（降级方案）
+          if (!anchor && hitMatrixRef.current) {
+            hitMatrix = hitMatrixRef.current.clone()
+            console.log('✅ 使用固定矩阵锚定模型（降级方案）')
+          }
+        } catch (error) {
+          console.warn('创建锚点失败，使用固定矩阵:', error)
+          // 降级：使用当前hit-test矩阵
           if (hitMatrixRef.current) {
             hitMatrix = hitMatrixRef.current.clone()
           }
-        } catch (error) {
-          console.warn('无法创建WebXR锚点，使用降级方案:', error)
         }
       }
     }
     
+    const objectId = Date.now()
+    console.log('🎯 放置对象:', {
+      id: objectId,
+      position: [pos.x, pos.y, pos.z],
+      hasAnchor: !!anchor,
+      hasHitMatrix: !!hitMatrix,
+      anchored: useFallbackMode || !!anchor || !!hitMatrix
+    })
+    
     setObjects(prev => [
       ...prev, 
       { 
-        id: Date.now(), 
+        id: objectId,
         type: objectType, 
         position: [pos.x, pos.y, pos.z],
         anchored: useFallbackMode || !!anchor || !!hitMatrix, // 降级模式或WebXR锚点
         anchor: anchor, // WebXR锚点对象
-        hitMatrix: hitMatrix, // 原生hit-test矩阵
+        hitMatrix: hitMatrix, // 原生hit-test矩阵（固定位置）
         modelUrl: objectType === 'model' ? modelUrl : null
       }
     ])
@@ -1344,19 +1425,7 @@ function App() {
               </Suspense>
             )}
             
-            {/* AR模式下：如果没有放置对象，默认在相机前方放置一个测试模型 */}
-            {isARSession && !useFallbackMode && objects.length === 0 && (
-              <Suspense fallback={
-                <mesh position={[0, 0, -2]}>
-                  <boxGeometry args={[0.3, 0.3, 0.3]} />
-                  <meshStandardMaterial color="orange" />
-                </mesh>
-              }>
-                <group position={[0, 0, -2]}>
-                  <LoadedModel url={DEFAULT_MODEL_URL} scale={1} />
-                </group>
-              </Suspense>
-            )}
+            {/* AR模式下：不自动放置模型，必须点击屏幕放置（这样模型才能锚定在真实世界） */}
 
             {/* 只在真实AR模式下使用Reticle */}
             {!useFallbackMode && <Reticle onPlace={handlePlace} hitMatrix={hitMatrixRef.current} />}
