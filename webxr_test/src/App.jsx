@@ -102,7 +102,8 @@ function Reticle({ onPlace, hitMatrix }) {
 }
 
 // 默认模型URL（使用本地assets目录下的模型）
-import modelGlb from './assets/model.glb'
+// 使用 ?url 后缀让Vite将文件作为URL导入
+import modelGlb from './assets/model.glb?url'
 const DEFAULT_MODEL_URL = modelGlb
 
 // 加载3D模型组件
