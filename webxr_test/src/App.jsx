@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { XR, createXRStore, useXRHitTest } from '@react-three/xr'
+import { XR, createXRStore, useXRHitTest, useXR } from '@react-three/xr'
 import { OrbitControls, Grid, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
@@ -8,13 +8,14 @@ import './App.css'
 const store = createXRStore({
   sessionOptions: {
     requiredFeatures: ['hit-test'],
-    optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor'],
+    optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
   }
 })
 
 function Reticle({ onPlace }) {
   const ref = useRef()
   const [isHit, setIsHit] = useState(false)
+  const hitTestResultRef = useRef(null)
 
   // Use 'viewer' reference space to cast ray from camera center
   useXRHitTest((results, getWorldMatrix) => {
@@ -23,6 +24,7 @@ function Reticle({ onPlace }) {
         ref.current.visible = true
         // Update matrix directly
         getWorldMatrix(ref.current.matrix, results[0])
+        hitTestResultRef.current = results[0] // 保存hit-test结果用于创建锚点
       }
       setIsHit(true)
     } else {
@@ -30,6 +32,7 @@ function Reticle({ onPlace }) {
         ref.current.visible = false
       }
       setIsHit(false)
+      hitTestResultRef.current = null
     }
   }, 'viewer')
 
@@ -45,9 +48,10 @@ function Reticle({ onPlace }) {
         rotation-x={-Math.PI / 2} 
         onClick={(e) => {
           e.stopPropagation()
-          if (isHit) {
+          if (isHit && ref.current) {
             const position = new THREE.Vector3().setFromMatrixPosition(ref.current.matrix)
-            onPlace(position)
+            // 传递hit-test结果，用于创建锚点
+            onPlace(position, hitTestResultRef.current)
           }
         }}
       >
@@ -79,10 +83,71 @@ function LoadedModel({ url, scale = 1 }) {
   return <primitive object={clonedScene} scale={modelScale} />
 }
 
-// 锚定对象组件 - 对象会保持在世界空间中的固定位置
-function AnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
+// 真正的AR锚定对象组件 - 使用WebXR空间锚点
+function ARAnchoredModel({ type, anchor, modelUrl }) {
   const groupRef = useRef()
-  const { camera } = useThree()
+  const xr = useXR()
+  
+  useFrame((state, delta, frame) => {
+    if (!groupRef.current || !anchor) return
+    
+    try {
+      // 如果有WebXR锚点，直接使用锚点的变换矩阵
+      if (anchor.anchorSpace && xr.session) {
+        const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
+        if (xrFrame) {
+          const referenceSpace = xr.session.requestReferenceSpace('local') || xr.session.requestReferenceSpace('local-floor')
+          if (referenceSpace) {
+            const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
+            if (pose) {
+              const matrix = new THREE.Matrix4().fromArray(pose.transform.matrix)
+              groupRef.current.matrix.copy(matrix)
+              return
+            }
+          }
+        }
+      }
+      
+      // 如果锚点空间不可用，尝试其他方法
+      if (anchor.matrix) {
+        const matrix = new THREE.Matrix4().fromArray(anchor.matrix)
+        groupRef.current.matrix.copy(matrix)
+      }
+    } catch (error) {
+      console.warn('更新AR锚点位置失败:', error)
+    }
+  })
+  
+  return (
+    <group ref={groupRef}>
+      {type === 'model' && modelUrl ? (
+        <Suspense fallback={
+          <mesh>
+            <boxGeometry args={[0.2, 0.2, 0.2]} />
+            <meshStandardMaterial color="gray" />
+          </mesh>
+        }>
+          <LoadedModel url={modelUrl} scale={1} />
+        </Suspense>
+      ) : type === 'cube' ? (
+        <mesh>
+          <boxGeometry args={[0.2, 0.2, 0.2]} />
+          <meshStandardMaterial color="orange" />
+        </mesh>
+      ) : (
+        <mesh>
+          <sphereGeometry args={[0.1, 32, 32]} />
+          <meshStandardMaterial color="hotpink" />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
+// 降级模式下的锚定对象组件 - 使用设备方向跟踪
+function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
+  const groupRef = useRef()
+  const { camera, gl } = useThree()
   
   useFrame(() => {
     if (!groupRef.current || !worldPosition || !cameraPose) return
@@ -101,13 +166,26 @@ function AnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
     const quaternion = new THREE.Quaternion().setFromEuler(euler)
     
     // 将世界坐标转换为相机本地坐标
+    // 使用改进的变换算法
     const localPos = worldPos.clone()
-    localPos.sub(new THREE.Vector3(
-      cameraPose.position[0],
-      cameraPose.position[1],
-      cameraPose.position[2]
-    ))
-    localPos.applyQuaternion(quaternion.invert())
+    
+    // 如果有四元数，使用四元数（更精确）
+    if (cameraPose.quaternion) {
+      localPos.sub(new THREE.Vector3(
+        cameraPose.position[0],
+        cameraPose.position[1],
+        cameraPose.position[2]
+      ))
+      localPos.applyQuaternion(cameraPose.quaternion.clone().invert())
+    } else {
+      // 否则使用欧拉角
+      localPos.sub(new THREE.Vector3(
+        cameraPose.position[0],
+        cameraPose.position[1],
+        cameraPose.position[2]
+      ))
+      localPos.applyQuaternion(quaternion.invert())
+    }
     
     groupRef.current.position.copy(localPos)
   })
@@ -138,10 +216,15 @@ function AnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
   )
 }
 
-function Model({ type, position, anchored, cameraPose, modelUrl }) {
-  // 如果锚定，使用AnchoredModel
+function Model({ type, position, anchored, cameraPose, modelUrl, anchor }) {
+  // 如果有WebXR锚点，使用真正的AR锚定
+  if (anchor) {
+    return <ARAnchoredModel type={type} anchor={anchor} modelUrl={modelUrl} />
+  }
+  
+  // 如果降级模式锚定，使用设备方向跟踪
   if (anchored && cameraPose) {
-    return <AnchoredModel type={type} worldPosition={position} cameraPose={cameraPose} modelUrl={modelUrl} />
+    return <FallbackAnchoredModel type={type} worldPosition={position} cameraPose={cameraPose} modelUrl={modelUrl} />
   }
   
   // 否则使用固定位置
@@ -295,6 +378,7 @@ function App() {
   const [anchorPosition, setAnchorPosition] = useState(null) // 锚定位置（世界坐标）
   const cameraPoseRef = useRef({ position: [0, 0, 0], rotation: [0, 0, 0] }) // 摄像头位姿
   const [showUI, setShowUI] = useState(true) // 控制UI显示/隐藏，未启动AR时默认显示
+  const anchorsRef = useRef(new Map()) // 存储WebXR锚点
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -526,7 +610,7 @@ function App() {
         // 注意：不包含 entityTypes，因为某些polyfill不支持
         const sessionInit = {
           requiredFeatures: ['hit-test'],
-          optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor'],
+          optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors', 'plane-detection'],
         }
         
         console.log('尝试启动AR会话，配置:', sessionInit)
@@ -780,14 +864,94 @@ function App() {
     }
   }
 
-  const handlePlace = (position) => {
+  // 创建WebXR锚点
+  const createXRAnchor = async (hitTestResult, referenceSpace) => {
+    try {
+      const session = store.getState().session
+      if (!session) {
+        console.warn('WebXR会话不可用')
+        return null
+      }
+
+      // 尝试使用hit-test结果创建锚点（更精确）
+      if (hitTestResult && session.requestAnchor) {
+        try {
+          const anchor = await session.requestAnchor(hitTestResult, referenceSpace)
+          console.log('✅ WebXR锚点创建成功（基于hit-test）:', anchor)
+          return anchor
+        } catch (error) {
+          console.warn('使用hit-test创建锚点失败，尝试使用位置:', error)
+        }
+      }
+
+      // 降级方案：使用位置创建锚点
+      if (session.requestAnchor) {
+        const position = hitTestResult 
+          ? new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(hitTestResult.getPose(referenceSpace).transform.matrix))
+          : hitTestResult
+
+        const matrix = new Float32Array(16)
+        const mat = new THREE.Matrix4()
+        if (position instanceof THREE.Vector3) {
+          mat.makeTranslation(position.x, position.y, position.z)
+        } else {
+          mat.makeTranslation(position[0] || 0, position[1] || 0, position[2] || 0)
+        }
+        mat.toArray(matrix)
+
+        const anchor = await session.requestAnchor(referenceSpace, { pose: { transform: { matrix } } })
+        console.log('✅ WebXR锚点创建成功（基于位置）:', anchor)
+        return anchor
+      }
+
+      return null
+    } catch (error) {
+      console.error('创建WebXR锚点失败:', error)
+      return null
+    }
+  }
+
+  const handlePlace = async (position, hitTestResult = null) => {
+    const pos = Array.isArray(position) 
+      ? new THREE.Vector3(position[0], position[1], position[2])
+      : position instanceof THREE.Vector3 
+        ? position 
+        : new THREE.Vector3(position.x || 0, position.y || 0, position.z || 0)
+    
+    let anchor = null
+    
+    // 如果是在真正的AR模式下，尝试创建WebXR锚点
+    if (isARSession && !useFallbackMode) {
+      const session = store.getState().session
+      if (session) {
+        try {
+          // 获取参考空间
+          const referenceSpace = session.requestReferenceSpace('local-floor') 
+            || session.requestReferenceSpace('local')
+            || gl.xr?.getReferenceSpace()
+          
+          if (referenceSpace) {
+            anchor = await createXRAnchor(hitTestResult || pos, referenceSpace)
+            if (anchor) {
+              const anchorId = Date.now()
+              anchorsRef.current.set(anchorId, anchor)
+              console.log('锚点已保存，ID:', anchorId)
+            }
+          }
+        } catch (error) {
+          console.warn('无法创建WebXR锚点，使用降级方案:', error)
+        }
+      }
+    }
+    
     setObjects(prev => [
       ...prev, 
       { 
         id: Date.now(), 
         type: objectType, 
-        position: Array.isArray(position) ? position : [position.x, position.y, position.z],
-        anchored: useFallbackMode, // 降级模式下使用锚定
+        position: [pos.x, pos.y, pos.z],
+        anchored: useFallbackMode || !!anchor, // 降级模式或WebXR锚点
+        anchor: anchor, // WebXR锚点对象
         modelUrl: objectType === 'model' ? modelUrl : null
       }
     ])
@@ -800,17 +964,26 @@ function App() {
     console.log('锚定位置已设置:', pos)
   }, [])
 
-  // 更新摄像头位姿
+  // 更新摄像头位姿 - 改进的跟踪算法
   const handlePoseUpdate = useCallback((pose) => {
     // 将设备方向转换为相机位姿
-    // 这里使用简化的模型：假设设备就是摄像头
+    // 使用更精确的欧拉角转换
+    const alpha = (pose.alpha || 0) * Math.PI / 180 // 绕Z轴（指南针方向）
+    const beta = (pose.beta || 0) * Math.PI / 180   // 绕X轴（前后倾斜）
+    const gamma = (pose.gamma || 0) * Math.PI / 180 // 绕Y轴（左右倾斜）
+    
+    // 转换为Three.js的坐标系（Y-up, Z-forward）
+    // 注意：DeviceOrientation使用不同的坐标系
     cameraPoseRef.current = {
       position: [0, 0, 0], // 相机位置（世界原点）
       rotation: [
-        pose.beta || 0,  // X轴旋转（前后倾斜）
-        pose.alpha || 0, // Y轴旋转（左右旋转）
-        pose.gamma || 0  // Z轴旋转（左右倾斜）
-      ]
+        beta,   // X轴旋转（俯仰角）
+        alpha,  // Y轴旋转（偏航角）
+        -gamma  // Z轴旋转（翻滚角，取反以匹配Three.js坐标系）
+      ],
+      quaternion: new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(beta, alpha, -gamma, 'YXZ')
+      )
     }
   }, [])
 
@@ -979,8 +1152,8 @@ function App() {
       </div>
       )}
 
-      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }}>
-        {/* 降级模式：显示摄像头视频流 */}
+      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: useFallbackMode ? 'transparent' : '#000' }}>
+        {/* 降级模式：显示摄像头视频流 - 必须在最底层 */}
         {useFallbackMode && (
           <video
             ref={videoRef}
@@ -988,25 +1161,34 @@ function App() {
             playsInline
             muted
             onLoadedData={() => {
-              console.log('视频数据加载完成', {
+              console.log('✅ 视频数据加载完成', {
                 videoWidth: videoRef.current?.videoWidth,
                 videoHeight: videoRef.current?.videoHeight,
-                readyState: videoRef.current?.readyState
+                readyState: videoRef.current?.readyState,
+                visible: videoRef.current?.offsetParent !== null,
+                zIndex: window.getComputedStyle(videoRef.current).zIndex
               })
             }}
+            onPlay={() => {
+              console.log('✅ 视频开始播放')
+            }}
+            onError={(e) => {
+              console.error('❌ 视频播放错误:', e)
+            }}
             style={{
-              position: 'absolute',
+              position: 'fixed', // 使用fixed确保在最底层
               top: 0,
               left: 0,
-              width: '100%',
-              height: '100%',
+              width: '100vw',
+              height: '100vh',
               objectFit: 'cover',
-              zIndex: 0,
+              zIndex: -1, // 使用负数确保在所有元素之下
               transform: 'scaleX(-1)', // 镜像翻转，更自然
               backgroundColor: '#000',
-              display: 'block',
-              visibility: 'visible',
-              opacity: 1
+              display: 'block !important',
+              visibility: 'visible !important',
+              opacity: '1 !important',
+              pointerEvents: 'none' // 让点击事件穿透
             }}
           />
         )}
@@ -1023,15 +1205,25 @@ function App() {
             // 确保Canvas背景完全透明
             gl.setClearColor(0x000000, 0)
             scene.background = null
+            
+            console.log('✅ Canvas创建完成，背景设置为完全透明', {
+              clearColor: gl.getClearColor(new THREE.Color()),
+              clearAlpha: gl.getClearAlpha(),
+              background: scene.background
+            })
           }}
           style={{ 
-            position: useFallbackMode ? 'absolute' : 'relative',
-            zIndex: useFallbackMode ? 1 : 0,
-            background: 'transparent', // 始终透明
+            position: useFallbackMode ? 'fixed' : 'relative',
+            top: useFallbackMode ? 0 : 'auto',
+            left: useFallbackMode ? 0 : 'auto',
             width: '100%',
             height: '100%',
+            zIndex: useFallbackMode ? 0 : 0, // 在视频之上（视频是-1）
+            background: 'transparent',
+            backgroundColor: 'transparent',
             pointerEvents: 'auto' // 确保可以接收点击事件
           }}
+          className={useFallbackMode ? 'fallback-canvas' : ''}
         >
           {/* 降级模式下的点击处理组件 */}
           {useFallbackMode && (
@@ -1095,6 +1287,7 @@ function App() {
                 anchored={obj.anchored}
                 cameraPose={cameraPoseRef.current}
                 modelUrl={obj.modelUrl || modelUrl}
+                anchor={obj.anchor} // WebXR锚点
               />
             ))}
             

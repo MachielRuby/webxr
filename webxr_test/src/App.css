@@ -128,12 +128,23 @@ button.active {
   color: #ffc107;
 }
 
-/* 降级模式视频样式 */
+/* 降级模式视频样式 - 确保在最底层 */
 video {
-  pointer-events: none; /* 让点击事件穿透到Canvas */
+  pointer-events: none !important; /* 让点击事件穿透到Canvas */
 }
 
-/* 确保Canvas在降级模式下可以接收点击 */
+/* 确保Canvas在降级模式下完全透明 */
 canvas {
   cursor: crosshair;
+}
+
+/* 降级模式下强制Canvas透明 */
+.fallback-canvas {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.fallback-canvas canvas {
+  background: transparent !important;
+  background-color: transparent !important;
 }
