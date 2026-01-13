@@ -35,7 +35,7 @@ function Reticle({ onPlace, hitMatrix }) {
   
   // 根据模型的targetSize自动计算十字星大小
   // 模型targetSize = 0.025（缩小20倍），十字星应该是模型的1.5-2倍大小
-  const MODEL_TARGET_SIZE = 0.025
+  const MODEL_TARGET_SIZE = 1
   const RETICLE_SCALE = 1.5 // 十字星相对于模型的大小倍数
   const innerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 0.8 // 内圈半径
   const outerRadius = MODEL_TARGET_SIZE * RETICLE_SCALE * 1.2 // 外圈半径
