@@ -29,9 +29,8 @@ const store = createXRStore({
 })
 
 // 真正的AR十字准星 - 使用原生WebXR hit-test
-function Reticle({ onPlace, hitMatrix, useVirtual = false }) {
+function Reticle({ onPlace, hitMatrix }) {
   const ref = useRef()
-  const { camera } = useThree()
   const [isHit, setIsHit] = useState(false)
   
   // 根据模型的targetSize自动计算十字星大小
@@ -47,36 +46,9 @@ function Reticle({ onPlace, hitMatrix, useVirtual = false }) {
     if (!ref.current) return
     
     if (hitMatrix) {
-      // 使用真实的hit-test结果
       ref.current.visible = true
+      // 直接使用hit-test矩阵，它已经包含了正确的位置和旋转
       ref.current.matrix.copy(hitMatrix)
-      ref.current.matrixAutoUpdate = false
-      setIsHit(true)
-    } else if (useVirtual) {
-      // 虚拟模式：在相机前方固定距离显示（屏幕中心，距离1.5米，地面高度）
-      ref.current.visible = true
-      const virtualDistance = 1.5 // 虚拟距离（米）
-      
-      // 计算虚拟位置：相机前方，保持水平
-      const forward = new THREE.Vector3(0, 0, -1)
-      forward.applyQuaternion(camera.quaternion)
-      // 只使用水平方向（忽略垂直分量），确保十字星在水平面上
-      const horizontalForward = new THREE.Vector3(forward.x, 0, forward.z).normalize()
-      
-      const virtualPosition = new THREE.Vector3()
-      virtualPosition.copy(camera.position)
-      virtualPosition.add(horizontalForward.multiplyScalar(virtualDistance))
-      virtualPosition.y = camera.position.y - 1.5 // 假设相机高度约1.5米，十字星在地面
-      
-      // 创建虚拟矩阵（水平放置，面向相机）
-      const virtualMatrix = new THREE.Matrix4()
-      // 计算水平旋转（只绕Y轴）
-      const yaw = Math.atan2(horizontalForward.x, horizontalForward.z)
-      virtualMatrix.makeRotationY(yaw)
-      virtualMatrix.rotateX(-Math.PI / 2) // 水平放置
-      virtualMatrix.setPosition(virtualPosition)
-      
-      ref.current.matrix.copy(virtualMatrix)
       ref.current.matrixAutoUpdate = false
       setIsHit(true)
     } else {
@@ -504,30 +476,6 @@ function App() {
   const [showUI, setShowUI] = useState(true) // 控制UI显示/隐藏，未启动AR时默认显示
   const anchorsRef = useRef(new Map()) // 存储WebXR锚点
   const [hitMatrix, setHitMatrix] = useState(null) // 存储当前hit-test矩阵（使用state触发重新渲染）
-  const [useVirtualReticle, setUseVirtualReticle] = useState(false) // 是否使用虚拟十字星（降级方案）
-  const arStartTimeRef = useRef(null) // AR启动时间
-  
-  // 监听hit-test结果，如果长时间没有检测到平面，启用虚拟十字星
-  useEffect(() => {
-    if (!isARSession || useFallbackMode) {
-      setUseVirtualReticle(false)
-      return
-    }
-    
-    // 如果检测到真实平面，禁用虚拟十字星
-    if (hitMatrix) {
-      setUseVirtualReticle(false)
-      return
-    }
-    
-    // 如果AR已启动但3秒内没有检测到平面，启用虚拟十字星
-    if (arStartTimeRef.current) {
-      const elapsed = Date.now() - arStartTimeRef.current
-      if (elapsed > 3000) { // 3秒后启用虚拟十字星
-        setUseVirtualReticle(true)
-      }
-    }
-  }, [hitMatrix, isARSession, useFallbackMode])
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -750,16 +698,10 @@ function App() {
             setShowUI(false)
           }
           
-          // 记录AR启动时间，用于虚拟十字星降级方案
-          arStartTimeRef.current = Date.now()
-          setUseVirtualReticle(false) // 重置虚拟十字星状态
-          
           // 监听AR会话结束
           xrSession.addEventListener('end', () => {
             setIsARSession(false)
             setArStatus('AR会话已结束')
-            setUseVirtualReticle(false)
-            arStartTimeRef.current = null
           })
         } else {
           setArStatus('⚠️ AR会话创建失败: 会话对象为空，尝试降级模式...')
@@ -1425,13 +1367,17 @@ function App() {
               </Suspense>
             )}
             
-            {/* 只在真实AR模式下使用Reticle - 支持虚拟模式（降级方案） */}
+            {/* AR模式下：显示提示信息 */}
+            {isARSession && !useFallbackMode && !hitMatrix && (
+              <mesh position={[0, 0.5, -1]}>
+                <planeGeometry args={[1, 0.3]} />
+                <meshBasicMaterial color="yellow" transparent opacity={0.8} side={THREE.DoubleSide} />
+              </mesh>
+            )}
+
+            {/* 只在真实AR模式下使用Reticle - 必须检测到平面才显示 */}
             {!useFallbackMode && isARSession && (
-              <Reticle 
-                onPlace={handlePlace} 
-                hitMatrix={hitMatrix} 
-                useVirtual={useVirtualReticle && !hitMatrix}
-              />
+              <Reticle onPlace={handlePlace} hitMatrix={hitMatrix} />
             )}
             
             {/* 降级模式下的十字准星 */}
