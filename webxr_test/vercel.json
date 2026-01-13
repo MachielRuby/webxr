@@ -1,7 +1,8 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install",
+  "installCommand": "npm install --production=false",
+  "framework": null,
   "rewrites": [
     {
       "source": "/(.*)",
