@@ -5,6 +5,73 @@ import { OrbitControls, Grid, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
 
+// 原生WebXR hit-test处理组件 - 使用真正的WebXR API
+function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
+  const { gl } = useThree()
+  const hitTestSourceRef = useRef(null)
+  const localSpaceRef = useRef(null)
+  const viewerSpaceRef = useRef(null)
+
+  useEffect(() => {
+    const session = store.getState().session
+    if (!session || session.mode !== 'immersive-ar') return
+
+    // 初始化hit-test
+    const initHitTest = async () => {
+      try {
+        viewerSpaceRef.current = await session.requestReferenceSpace('viewer')
+        localSpaceRef.current = await session.requestReferenceSpace('local')
+        hitTestSourceRef.current = await session.requestHitTestSource({ 
+          space: viewerSpaceRef.current 
+        })
+        console.log('✅ 原生WebXR hit-test已初始化')
+      } catch (error) {
+        console.error('初始化hit-test失败:', error)
+      }
+    }
+
+    initHitTest()
+
+    // 在每一帧中执行hit-test
+    const onXRFrame = (t, frame) => {
+      if (!hitTestSourceRef.current || !localSpaceRef.current) return
+
+      const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current)
+      if (hitTestResults.length > 0) {
+        const hit = hitTestResults[0]
+        const hitPose = hit.getPose(localSpaceRef.current)
+        
+        if (hitPose) {
+          const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix)
+          onHitMatrixUpdate(matrix)
+        }
+      } else {
+        onHitMatrixUpdate(null)
+      }
+    }
+
+    // 注册到WebXR渲染循环
+    if (gl.xr && gl.xr.isPresenting) {
+      const originalRender = gl.render.bind(gl)
+      gl.render = function(scene, camera) {
+        const frame = gl.xr.getFrame()
+        if (frame) {
+          onXRFrame(0, frame)
+        }
+        originalRender(scene, camera)
+      }
+    }
+
+    return () => {
+      if (hitTestSourceRef.current) {
+        hitTestSourceRef.current.cancel()
+      }
+    }
+  }, [gl, onHitMatrixUpdate])
+
+  return null
+}
+
 const store = createXRStore({
   sessionOptions: {
     requiredFeatures: ['hit-test'],
@@ -12,27 +79,43 @@ const store = createXRStore({
   }
 })
 
-function Reticle({ onPlace }) {
+// 真正的AR十字准星 - 使用原生WebXR hit-test
+function Reticle({ onPlace, hitMatrix }) {
   const ref = useRef()
   const [isHit, setIsHit] = useState(false)
-  const hitTestResultRef = useRef(null)
 
-  // Use 'viewer' reference space to cast ray from camera center
-  useXRHitTest((results, getWorldMatrix) => {
-    if (results.length > 0) {
-      if (ref.current) {
-        ref.current.visible = true
-        // Update matrix directly
-        getWorldMatrix(ref.current.matrix, results[0])
-        hitTestResultRef.current = results[0] // 保存hit-test结果用于创建锚点
-      }
+  useFrame(() => {
+    if (!ref.current) return
+    
+    // 如果有hit-test矩阵（从原生WebXR获取），更新位置
+    if (hitMatrix) {
+      ref.current.visible = true
+      ref.current.matrix.copy(hitMatrix)
+      ref.current.matrix.decompose(
+        ref.current.position,
+        ref.current.quaternion,
+        ref.current.scale
+      )
       setIsHit(true)
     } else {
+      ref.current.visible = false
+      setIsHit(false)
+    }
+  })
+
+  // 也使用useXRHitTest作为备用（如果原生方式不可用）
+  useXRHitTest((results, getWorldMatrix) => {
+    if (results.length > 0 && !hitMatrix) {
+      if (ref.current) {
+        ref.current.visible = true
+        getWorldMatrix(ref.current.matrix, results[0])
+        setIsHit(true)
+      }
+    } else if (results.length === 0 && !hitMatrix) {
       if (ref.current) {
         ref.current.visible = false
       }
       setIsHit(false)
-      hitTestResultRef.current = null
     }
   }, 'viewer')
 
@@ -50,8 +133,7 @@ function Reticle({ onPlace }) {
           e.stopPropagation()
           if (isHit && ref.current) {
             const position = new THREE.Vector3().setFromMatrixPosition(ref.current.matrix)
-            // 传递hit-test结果，用于创建锚点
-            onPlace(position, hitTestResultRef.current)
+            onPlace(position, hitMatrix)
           }
         }}
       >
@@ -84,37 +166,62 @@ function LoadedModel({ url, scale = 1 }) {
 }
 
 // 真正的AR锚定对象组件 - 使用WebXR空间锚点
-function ARAnchoredModel({ type, anchor, modelUrl }) {
+// 在真正的AR模式下，对象位置由WebXR系统自动管理，不需要手动更新
+function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
   const groupRef = useRef()
-  const xr = useXR()
+  const { gl } = useThree()
   
-  useFrame((state, delta, frame) => {
-    if (!groupRef.current || !anchor) return
+  useFrame(() => {
+    if (!groupRef.current) return
     
-    try {
-      // 如果有WebXR锚点，直接使用锚点的变换矩阵
-      if (anchor.anchorSpace && xr.session) {
-        const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
+    // 如果有hit-test矩阵（从原生WebXR获取），直接使用
+    if (hitMatrix) {
+      groupRef.current.matrix.copy(hitMatrix)
+      groupRef.current.matrix.decompose(
+        groupRef.current.position,
+        groupRef.current.quaternion,
+        groupRef.current.scale
+      )
+      groupRef.current.matrixAutoUpdate = false
+      return
+    }
+    
+    // 如果有WebXR锚点，尝试从当前帧获取位置
+    if (anchor?.anchorSpace) {
+      try {
+        const xrFrame = gl.xr?.getFrame()
         if (xrFrame) {
-          const referenceSpace = xr.session.requestReferenceSpace('local') || xr.session.requestReferenceSpace('local-floor')
+          const referenceSpace = gl.xr?.getReferenceSpace()
           if (referenceSpace) {
             const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
             if (pose) {
               const matrix = new THREE.Matrix4().fromArray(pose.transform.matrix)
               groupRef.current.matrix.copy(matrix)
+              groupRef.current.matrix.decompose(
+                groupRef.current.position,
+                groupRef.current.quaternion,
+                groupRef.current.scale
+              )
+              groupRef.current.matrixAutoUpdate = false
               return
             }
           }
         }
+      } catch (error) {
+        // 忽略错误，使用固定位置
       }
-      
-      // 如果锚点空间不可用，尝试其他方法
-      if (anchor.matrix) {
-        const matrix = new THREE.Matrix4().fromArray(anchor.matrix)
-        groupRef.current.matrix.copy(matrix)
-      }
-    } catch (error) {
-      console.warn('更新AR锚点位置失败:', error)
+    }
+    
+    // 如果锚点空间不可用，使用固定位置（从创建时的矩阵）
+    if (anchor?.matrix) {
+      const matrix = new THREE.Matrix4().fromArray(anchor.matrix)
+      groupRef.current.matrix.copy(matrix)
+      groupRef.current.matrix.decompose(
+        groupRef.current.position,
+        groupRef.current.quaternion,
+        groupRef.current.scale
+      )
+      groupRef.current.matrixAutoUpdate = false
     }
   })
   
@@ -216,10 +323,10 @@ function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
   )
 }
 
-function Model({ type, position, anchored, cameraPose, modelUrl, anchor }) {
-  // 如果有WebXR锚点，使用真正的AR锚定
-  if (anchor) {
-    return <ARAnchoredModel type={type} anchor={anchor} modelUrl={modelUrl} />
+function Model({ type, position, anchored, cameraPose, modelUrl, anchor, hitMatrix }) {
+  // 如果有WebXR锚点或hit-test矩阵，使用真正的AR锚定
+  if (anchor || hitMatrix) {
+    return <ARAnchoredModel type={type} anchor={anchor} modelUrl={modelUrl} hitMatrix={hitMatrix} />
   }
   
   // 如果降级模式锚定，使用设备方向跟踪
@@ -379,6 +486,9 @@ function App() {
   const cameraPoseRef = useRef({ position: [0, 0, 0], rotation: [0, 0, 0] }) // 摄像头位姿
   const [showUI, setShowUI] = useState(true) // 控制UI显示/隐藏，未启动AR时默认显示
   const anchorsRef = useRef(new Map()) // 存储WebXR锚点
+  const hitMatrixRef = useRef(null) // 存储当前hit-test矩阵（从原生WebXR获取）
+  const hitTestSourceRef = useRef(null) // 存储hit-test源
+  const xrFrameRef = useRef(null) // 存储当前XR帧
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -535,111 +645,76 @@ function App() {
 
       // 检查AR支持
       let isARSupported = false
-      let isVRSupported = false
       
       try {
         isARSupported = await navigator.xr.isSessionSupported('immersive-ar')
-        isVRSupported = await navigator.xr.isSessionSupported('immersive-vr')
       } catch (error) {
         console.error('检查WebXR支持时出错:', error)
         setArStatus('❌ 无法检查WebXR支持，可能浏览器不支持WebXR API')
         return
       }
       
-      console.log('AR支持:', isARSupported)
-      console.log('VR支持:', isVRSupported)
-      console.log('User Agent:', navigator.userAgent)
-      console.log('平台:', navigator.platform)
-      
       if (!isARSupported) {
-        if (isVRSupported) {
-          setArStatus('⚠️ 检测到VR模拟器！请关闭Chrome的WebXR模拟器：chrome://flags/#webxr-runtime 设置为"None"')
-          // 仍然尝试，但会检查会话类型
-        } else {
-          // 桌面环境可能不支持immersive-ar，提供降级方案
-          const isDesktop = !/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-          if (isDesktop) {
-            setArStatus('⚠️ 桌面环境可能不支持immersive-ar。将尝试使用摄像头流作为降级方案...')
-            // 继续执行，尝试启动AR
-          } else {
-            setArStatus('❌ 设备不支持AR模式。请：1) 使用Chrome/Edge 2) 访问 chrome://flags/#webxr-runtime 启用AR支持')
-            return
-          }
-        }
-      } else {
-        setArStatus('✓ AR模式支持已确认')
-      }
-
-      // 确保有选中的摄像头
-      if (!selectedCamera && cameras.length > 0) {
-        setSelectedCamera(cameras[0].deviceId)
-      }
-
-      // 请求摄像头权限并验证摄像头可用
-      if (selectedCamera) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              deviceId: selectedCamera ? { exact: selectedCamera } : undefined,
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            } 
-          })
-          // 验证流是否有效
-          const videoTrack = stream.getVideoTracks()[0]
-          if (videoTrack) {
-            console.log('使用摄像头:', videoTrack.label || selectedCamera)
-            console.log('摄像头设置:', videoTrack.getSettings())
-          }
-          stream.getTracks().forEach(track => track.stop())
-        } catch (error) {
-          console.error('摄像头访问失败:', error)
-          setArStatus(`无法访问摄像头: ${error.message}`)
-          return
-        }
-      } else {
-        setArStatus('请先选择摄像头')
+        setArStatus('❌ 设备不支持AR模式。请：1) 使用Android Chrome或iOS Safari 2) 访问 chrome://flags/#webxr-runtime 启用AR支持')
         return
       }
 
-      // 进入AR模式 - 明确指定使用immersive-ar
-      setArStatus('正在初始化AR会话...')
-      
+      setArStatus('✓ AR模式支持已确认，正在启动真正的WebXR AR...')
+
+      // 直接使用原生WebXR API启动AR会话
       try {
-        // 直接使用WebXR API确保使用AR模式
-        // 注意：不包含 entityTypes，因为某些polyfill不支持
-        const sessionInit = {
-          requiredFeatures: ['hit-test'],
-          optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors', 'plane-detection'],
+        const arSession = await navigator.xr.requestSession('immersive-ar', {
+          requiredFeatures: ['hit-test', 'local'],
+          optionalFeatures: ['dom-overlay', 'anchors'],
+        })
+
+        console.log('✅ 真正的AR会话已创建:', arSession.mode)
+        
+        if (arSession.mode !== 'immersive-ar') {
+          await arSession.end()
+          setArStatus('❌ 会话类型错误，不是AR模式')
+          return
         }
-        
-        console.log('尝试启动AR会话，配置:', sessionInit)
-        
-        // 使用enterAR并传入配置
-        await store.enterAR(sessionInit)
+
+        setIsARSession(true)
+        setArStatus('✅ 真正的WebXR AR模式已启动！移动设备查看效果')
+        setShowUI(false)
+
+        // 监听会话结束
+        arSession.addEventListener('end', () => {
+          setIsARSession(false)
+          setArStatus('AR会话已结束')
+        })
+
+        // 注意：真正的AR渲染由Canvas组件内的XR系统处理
+        // 这里只需要确保会话已创建
+        await store.enterAR({
+          requiredFeatures: ['hit-test', 'local'],
+          optionalFeatures: ['dom-overlay', 'anchors'],
+        })
         
         // 验证会话类型
-        const session = store.getState().session
-        if (session) {
-          console.log('XR会话类型:', session.mode)
-          console.log('XR会话特性:', session.enabledFeatures)
-          console.log('XR会话输入源:', session.inputSources)
+        const xrSession = store.getState().session
+        if (xrSession) {
+          console.log('XR会话类型:', xrSession.mode)
+          console.log('XR会话特性:', xrSession.enabledFeatures)
+          console.log('XR会话输入源:', xrSession.inputSources)
           
           // 处理会话类型为 undefined 的情况
-          if (!session.mode || session.mode === undefined) {
+          if (!xrSession.mode || xrSession.mode === undefined) {
             const errorMsg = '会话类型是 undefined，可能是环境不支持AR或polyfill问题'
             console.log('检测到会话类型为undefined，将启用降级模式')
             setArStatus('⚠️ WebXR AR不可用，正在启用降级模式（摄像头流 + 手动控制）...')
             setErrorDetails(`信息: ${errorMsg}\n会话对象: ${JSON.stringify({
-              mode: session.mode,
-              enabledFeatures: session.enabledFeatures,
-              inputSources: session.inputSources?.length || 0
+              mode: xrSession.mode,
+              enabledFeatures: xrSession.enabledFeatures,
+              inputSources: xrSession.inputSources?.length || 0
             }, null, 2)}`)
             
             // 关闭会话并启用降级模式
             try {
-              if (session && typeof session.end === 'function') {
-                await session.end()
+              if (xrSession && typeof xrSession.end === 'function') {
+                await xrSession.end()
               }
             } catch (e) {
               console.warn('关闭会话时出错（可忽略）:', e)
@@ -656,18 +731,18 @@ function App() {
             return
           }
           
-          if (session.mode !== 'immersive-ar') {
-            console.warn('警告: 会话类型不是immersive-ar，而是:', session.mode)
-            setArStatus(`警告: 当前模式是 ${session.mode}，不是AR模式`)
+          if (xrSession.mode !== 'immersive-ar') {
+            console.warn('警告: 会话类型不是immersive-ar，而是:', xrSession.mode)
+            setArStatus(`警告: 当前模式是 ${xrSession.mode}，不是AR模式`)
             
             // 如果是VR模式，提示用户并关闭会话
-            if (session.mode === 'immersive-vr') {
+            if (xrSession.mode === 'immersive-vr') {
               setArStatus('❌ 错误: 进入了VR模拟器模式！将启用降级模式。要使用真实AR，请：1) 访问 chrome://flags/#webxr-runtime 2) 设置为"None"禁用模拟器 3) 刷新页面重试')
               
               // 关闭会话
               try {
-                if (session.end) {
-                  await session.end()
+                if (xrSession.end) {
+                  await xrSession.end()
                 }
               } catch (e) {
                 console.warn('关闭会话时出错:', e)
@@ -685,7 +760,7 @@ function App() {
           }
           
           // 监听AR会话结束
-          session.addEventListener('end', () => {
+          xrSession.addEventListener('end', () => {
             setIsARSession(false)
             setArStatus('AR会话已结束')
           })
@@ -919,6 +994,7 @@ function App() {
         : new THREE.Vector3(position.x || 0, position.y || 0, position.z || 0)
     
     let anchor = null
+    let hitMatrix = null
     
     // 如果是在真正的AR模式下，尝试创建WebXR锚点
     if (isARSession && !useFallbackMode) {
@@ -928,7 +1004,6 @@ function App() {
           // 获取参考空间
           const referenceSpace = session.requestReferenceSpace('local-floor') 
             || session.requestReferenceSpace('local')
-            || gl.xr?.getReferenceSpace()
           
           if (referenceSpace) {
             anchor = await createXRAnchor(hitTestResult || pos, referenceSpace)
@@ -937,6 +1012,11 @@ function App() {
               anchorsRef.current.set(anchorId, anchor)
               console.log('锚点已保存，ID:', anchorId)
             }
+          }
+          
+          // 如果有hit-test矩阵，保存它
+          if (hitMatrixRef.current) {
+            hitMatrix = hitMatrixRef.current.clone()
           }
         } catch (error) {
           console.warn('无法创建WebXR锚点，使用降级方案:', error)
@@ -950,8 +1030,9 @@ function App() {
         id: Date.now(), 
         type: objectType, 
         position: [pos.x, pos.y, pos.z],
-        anchored: useFallbackMode || !!anchor, // 降级模式或WebXR锚点
+        anchored: useFallbackMode || !!anchor || !!hitMatrix, // 降级模式或WebXR锚点
         anchor: anchor, // WebXR锚点对象
+        hitMatrix: hitMatrix, // 原生hit-test矩阵
         modelUrl: objectType === 'model' ? modelUrl : null
       }
     ])
@@ -1233,6 +1314,14 @@ function App() {
             </>
           )}
           <XR store={store}>
+            {/* 原生WebXR hit-test处理组件 */}
+            {isARSession && !useFallbackMode && (
+              <NativeWebXRHitTest 
+                onHitMatrixUpdate={(matrix) => { hitMatrixRef.current = matrix }}
+                onPlace={handlePlace}
+              />
+            )}
+            
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} />
             <directionalLight position={[0, 5, 5]} intensity={0.5} />
@@ -1268,7 +1357,7 @@ function App() {
             )}
 
             {/* 只在真实AR模式下使用Reticle */}
-            {!useFallbackMode && <Reticle onPlace={handlePlace} />}
+            {!useFallbackMode && <Reticle onPlace={handlePlace} hitMatrix={hitMatrixRef.current} />}
             
             {/* 降级模式下的十字准星 */}
             {useFallbackMode && (
@@ -1288,6 +1377,7 @@ function App() {
                 cameraPose={cameraPoseRef.current}
                 modelUrl={obj.modelUrl || modelUrl}
                 anchor={obj.anchor} // WebXR锚点
+                hitMatrix={obj.hitMatrix} // 原生hit-test矩阵
               />
             ))}
             
