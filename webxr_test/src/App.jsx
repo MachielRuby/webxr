@@ -37,12 +37,21 @@ function Reticle({ onPlace, hitMatrix }) {
     
     if (hitMatrix) {
       ref.current.visible = true
+      // 直接使用矩阵，确保位置和旋转都正确
       ref.current.matrix.copy(hitMatrix)
-      ref.current.matrix.decompose(
-        ref.current.position,
-        ref.current.quaternion,
-        ref.current.scale
-      )
+      
+      // 分解矩阵获取位置和旋转
+      const position = new THREE.Vector3()
+      const quaternion = new THREE.Quaternion()
+      const scale = new THREE.Vector3()
+      ref.current.matrix.decompose(position, quaternion, scale)
+      
+      // 稍微抬高一点，确保十字准星在平面上方（而不是嵌入平面）
+      position.y += 0.01
+      
+      // 重新组合矩阵
+      ref.current.matrix.compose(position, quaternion, scale)
+      ref.current.matrixAutoUpdate = false
       setIsHit(true)
     } else {
       ref.current.visible = false
@@ -53,38 +62,40 @@ function Reticle({ onPlace, hitMatrix }) {
 
   return (
     <group ref={ref} visible={false}>
-      {/* Visual Ring - 更大的十字准星 */}
-      <mesh rotation-x={-Math.PI / 2}>
-        <ringGeometry args={[0.15, 0.2, 32]} />
-        <meshStandardMaterial 
-          color="white" 
-          emissive={0xffffff}
-          emissiveIntensity={0.5}
-        />
-      </mesh>
-      {/* 中心点 */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.01, 0]}>
-        <circleGeometry args={[0.05, 32]} />
-        <meshStandardMaterial 
-          color="white" 
-          emissive={0xffffff}
-          emissiveIntensity={1}
-        />
-      </mesh>
-      {/* Invisible Click Target */}
-      <mesh 
-        rotation-x={-Math.PI / 2} 
-        onClick={(e) => {
-          e.stopPropagation()
-          if (isHit && ref.current) {
-            const position = new THREE.Vector3().setFromMatrixPosition(ref.current.matrix)
-            onPlace(position, hitMatrix)
-          }
-        }}
-      >
-        <circleGeometry args={[0.2, 32]} />
-        <meshBasicMaterial visible={false} />
-      </mesh>
+      {/* Visual Ring - 贴合地面的十字准星 */}
+      {/* 使用子group来应用旋转，让ring平行于地面 */}
+      <group rotation-x={-Math.PI / 2}>
+        <mesh>
+          <ringGeometry args={[0.15, 0.2, 32]} />
+          <meshStandardMaterial 
+            color="white" 
+            emissive={0xffffff}
+            emissiveIntensity={0.5}
+          />
+        </mesh>
+        {/* 中心点 */}
+        <mesh position={[0, 0.01, 0]}>
+          <circleGeometry args={[0.05, 32]} />
+          <meshStandardMaterial 
+            color="white" 
+            emissive={0xffffff}
+            emissiveIntensity={1}
+          />
+        </mesh>
+        {/* Invisible Click Target */}
+        <mesh 
+          onClick={(e) => {
+            e.stopPropagation()
+            if (isHit && ref.current) {
+              const position = new THREE.Vector3().setFromMatrixPosition(ref.current.matrix)
+              onPlace(position, hitMatrix)
+            }
+          }}
+        >
+          <circleGeometry args={[0.2, 32]} />
+          <meshBasicMaterial visible={false} />
+        </mesh>
+      </group>
     </group>
   )
 }
