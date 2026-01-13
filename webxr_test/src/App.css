@@ -1,0 +1,139 @@
+.container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.overlay {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  color: white;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+button:hover {
+  border-color: #646cff;
+}
+
+button.active {
+  border-color: #646cff;
+  background-color: #333;
+}
+
+.status {
+  color: #fff;
+  font-size: 0.9em;
+  padding: 5px 10px;
+  background: rgba(100, 108, 255, 0.3);
+  border-radius: 5px;
+  min-height: 20px;
+  text-align: center;
+}
+
+.camera-select {
+  padding: 0.6em 1.2em;
+  border-radius: 8px;
+  border: 1px solid #646cff;
+  background-color: #1a1a1a;
+  color: white;
+  font-size: 0.9em;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.camera-select:hover {
+  border-color: #747bff;
+}
+
+.ar-button {
+  background-color: #646cff !important;
+  font-weight: 600;
+  padding: 0.8em 1.5em;
+}
+
+.ar-button:hover {
+  background-color: #747bff !important;
+  border-color: #747bff;
+}
+
+.ar-button.exit {
+  background-color: #ff4444 !important;
+}
+
+.ar-button.exit:hover {
+  background-color: #ff6666 !important;
+}
+
+.refresh-button {
+  padding: 0.6em 0.8em !important;
+  font-size: 1.2em;
+  background-color: #333 !important;
+  min-width: auto;
+}
+
+.refresh-button:hover {
+  background-color: #444 !important;
+  border-color: #646cff;
+}
+
+.warning-box {
+  background: rgba(255, 193, 7, 0.2);
+  border: 2px solid #ffc107;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 5px 0;
+  color: #fff;
+  font-size: 0.85em;
+  max-width: 100%;
+}
+
+.warning-box strong {
+  color: #ffc107;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.warning-box code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: monospace;
+  color: #ffc107;
+}
+
+/* 降级模式视频样式 */
+video {
+  pointer-events: none; /* 让点击事件穿透到Canvas */
+}
+
+/* 确保Canvas在降级模式下可以接收点击 */
+canvas {
+  cursor: crosshair;
+}
