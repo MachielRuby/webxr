@@ -11,32 +11,63 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
   const hitTestSourceRef = useRef(null)
   const localSpaceRef = useRef(null)
   const viewerSpaceRef = useRef(null)
+  const initializedRef = useRef(false)
 
+  // 初始化hit-test
   useEffect(() => {
     const session = store.getState().session
-    if (!session || session.mode !== 'immersive-ar') return
+    if (!session) return
 
-    // 初始化hit-test
+    // 等待会话完全初始化
     const initHitTest = async () => {
       try {
+        // 检查会话类型（允许undefined，某些polyfill可能不设置）
+        const sessionMode = session.mode
+        if (sessionMode && sessionMode !== 'immersive-ar' && sessionMode !== 'inline') {
+          console.warn('会话类型不是AR:', sessionMode)
+          return
+        }
+
         viewerSpaceRef.current = await session.requestReferenceSpace('viewer')
         localSpaceRef.current = await session.requestReferenceSpace('local')
         hitTestSourceRef.current = await session.requestHitTestSource({ 
           space: viewerSpaceRef.current 
         })
+        initializedRef.current = true
         console.log('✅ 原生WebXR hit-test已初始化')
       } catch (error) {
         console.error('初始化hit-test失败:', error)
+        initializedRef.current = false
       }
     }
 
-    initHitTest()
+    // 延迟初始化，确保会话完全准备好
+    const timer = setTimeout(initHitTest, 100)
+    
+    return () => {
+      clearTimeout(timer)
+      if (hitTestSourceRef.current) {
+        try {
+          hitTestSourceRef.current.cancel()
+        } catch (e) {
+          console.warn('取消hit-test源失败:', e)
+        }
+        hitTestSourceRef.current = null
+      }
+      initializedRef.current = false
+    }
+  }, [gl])
 
-    // 在每一帧中执行hit-test
-    const onXRFrame = (t, frame) => {
-      if (!hitTestSourceRef.current || !localSpaceRef.current) return
+  // 在每一帧中执行hit-test（使用useFrame更可靠）
+  useFrame((state, delta, frame) => {
+    if (!initializedRef.current || !hitTestSourceRef.current || !localSpaceRef.current) return
 
-      const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current)
+    try {
+      // 获取当前XR帧
+      const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
+      if (!xrFrame) return
+
+      const hitTestResults = xrFrame.getHitTestResults(hitTestSourceRef.current)
       if (hitTestResults.length > 0) {
         const hit = hitTestResults[0]
         const hitPose = hit.getPose(localSpaceRef.current)
@@ -48,26 +79,11 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
       } else {
         onHitMatrixUpdate(null)
       }
+    } catch (error) {
+      // 忽略错误，继续运行
+      console.warn('执行hit-test时出错:', error)
     }
-
-    // 注册到WebXR渲染循环
-    if (gl.xr && gl.xr.isPresenting) {
-      const originalRender = gl.render.bind(gl)
-      gl.render = function(scene, camera) {
-        const frame = gl.xr.getFrame()
-        if (frame) {
-          onXRFrame(0, frame)
-        }
-        originalRender(scene, camera)
-      }
-    }
-
-    return () => {
-      if (hitTestSourceRef.current) {
-        hitTestSourceRef.current.cancel()
-      }
-    }
-  }, [gl, onHitMatrixUpdate])
+  })
 
   return null
 }
@@ -1129,9 +1145,23 @@ function App() {
             启动AR模式
           </button>
         ) : (
-          <button onClick={handleExitAR} className="ar-button exit">
-            退出AR模式
-          </button>
+          <>
+            <button onClick={handleExitAR} className="ar-button exit">
+              退出AR模式
+            </button>
+            {!useFallbackMode && (
+              <div style={{ 
+                marginTop: '10px', 
+                padding: '10px', 
+                background: 'rgba(0, 255, 0, 0.2)', 
+                borderRadius: '5px',
+                fontSize: '0.85em',
+                textAlign: 'center'
+              }}>
+                💡 <strong>提示：</strong>将摄像头对准平面，点击屏幕放置3D模型
+              </div>
+            )}
+          </>
         )}
         
         <div className="controls">
@@ -1241,11 +1271,11 @@ function App() {
             powerPreference: "high-performance"
           }}
           onCreated={({ gl, scene }) => {
-            // 确保Canvas背景完全透明
+            // AR模式：背景必须是透明的，以便显示真实世界
             gl.setClearColor(0x000000, 0)
             scene.background = null
             
-            console.log('✅ Canvas创建完成，背景设置为完全透明', {
+            console.log('✅ Canvas创建完成，背景设置为透明', {
               clearColor: gl.getClearColor(new THREE.Color()),
               clearAlpha: gl.getClearAlpha(),
               background: scene.background
@@ -1309,6 +1339,20 @@ function App() {
                 </mesh>
               }>
                 <group position={[0, 0, -3]}>
+                  <LoadedModel url={DEFAULT_MODEL_URL} scale={1} />
+                </group>
+              </Suspense>
+            )}
+            
+            {/* AR模式下：如果没有放置对象，默认在相机前方放置一个测试模型 */}
+            {isARSession && !useFallbackMode && objects.length === 0 && (
+              <Suspense fallback={
+                <mesh position={[0, 0, -2]}>
+                  <boxGeometry args={[0.3, 0.3, 0.3]} />
+                  <meshStandardMaterial color="orange" />
+                </mesh>
+              }>
+                <group position={[0, 0, -2]}>
                   <LoadedModel url={DEFAULT_MODEL_URL} scale={1} />
                 </group>
               </Suspense>
