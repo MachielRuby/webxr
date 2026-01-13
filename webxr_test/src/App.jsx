@@ -28,13 +28,22 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
           return
         }
 
+        console.log('🔄 开始初始化hit-test...')
+        
         viewerSpaceRef.current = await session.requestReferenceSpace('viewer')
+        console.log('✅ viewer空间已获取')
+        
         localSpaceRef.current = await session.requestReferenceSpace('local')
+        console.log('✅ local空间已获取')
+        
         hitTestSourceRef.current = await session.requestHitTestSource({ 
           space: viewerSpaceRef.current 
         })
+        console.log('✅ hit-test源已创建:', hitTestSourceRef.current)
+        
         initializedRef.current = true
-        console.log('✅ 原生WebXR hit-test已初始化')
+        console.log('✅ 原生WebXR hit-test已初始化完成！')
+        console.log('💡 提示：将摄像头对准有纹理的平面（如地面、桌面），等待AR系统扫描环境')
       } catch (error) {
         console.error('初始化hit-test失败:', error)
         initializedRef.current = false
@@ -58,16 +67,49 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
     }
   }, [gl])
 
+  // 调试计数器
+  const debugCounterRef = useRef(0)
+  const lastHitCountRef = useRef(0)
+
   // 在每一帧中执行hit-test（使用useFrame更可靠）
   useFrame((state, delta, frame) => {
-    if (!initializedRef.current || !hitTestSourceRef.current || !localSpaceRef.current) return
+    if (!initializedRef.current || !hitTestSourceRef.current || !localSpaceRef.current) {
+      // 每60帧打印一次调试信息
+      if (debugCounterRef.current % 60 === 0) {
+        console.log('🔍 Hit-test状态检查:', {
+          initialized: initializedRef.current,
+          hasHitTestSource: !!hitTestSourceRef.current,
+          hasLocalSpace: !!localSpaceRef.current,
+          hasGL: !!state.gl,
+          isPresenting: state.gl?.xr?.isPresenting
+        })
+      }
+      debugCounterRef.current++
+      return
+    }
 
     try {
       // 获取当前XR帧
       const xrFrame = frame?.xrFrame || state.gl.xr?.getFrame()
-      if (!xrFrame) return
+      if (!xrFrame) {
+        // 每60帧打印一次调试信息
+        if (debugCounterRef.current % 60 === 0) {
+          console.log('⚠️ 无法获取XR帧')
+        }
+        debugCounterRef.current++
+        return
+      }
 
       const hitTestResults = xrFrame.getHitTestResults(hitTestSourceRef.current)
+      
+      // 打印hit-test结果（每30帧一次，避免刷屏）
+      if (debugCounterRef.current % 30 === 0) {
+        console.log('🎯 Hit-test结果:', {
+          resultsCount: hitTestResults.length,
+          hasResults: hitTestResults.length > 0
+        })
+      }
+      
       if (hitTestResults.length > 0) {
         const hit = hitTestResults[0]
         const hitPose = hit.getPose(localSpaceRef.current)
@@ -75,13 +117,30 @@ function NativeWebXRHitTest({ onHitMatrixUpdate, onPlace }) {
         if (hitPose) {
           const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix)
           onHitMatrixUpdate(matrix)
+          
+          // 成功检测到平面时打印一次
+          if (lastHitCountRef.current === 0) {
+            console.log('✅ 检测到平面！十字准星应该显示')
+          }
+          lastHitCountRef.current = hitTestResults.length
+        } else {
+          console.warn('⚠️ Hit-test有结果但无法获取pose')
+          onHitMatrixUpdate(null)
         }
       } else {
+        // 从有结果变为无结果时打印
+        if (lastHitCountRef.current > 0) {
+          console.log('⚠️ 未检测到平面，请将摄像头对准有纹理的表面（如地面、桌面）')
+        }
+        lastHitCountRef.current = 0
         onHitMatrixUpdate(null)
       }
+      
+      debugCounterRef.current++
     } catch (error) {
-      // 忽略错误，继续运行
-      console.warn('执行hit-test时出错:', error)
+      // 打印错误详情
+      console.error('❌ 执行hit-test时出错:', error)
+      onHitMatrixUpdate(null)
     }
   })
 
@@ -99,12 +158,16 @@ const store = createXRStore({
 function Reticle({ onPlace, hitMatrix }) {
   const ref = useRef()
   const [isHit, setIsHit] = useState(false)
+  const debugCounterRef = useRef(0)
 
   useFrame(() => {
     if (!ref.current) return
     
     // 如果有hit-test矩阵（从原生WebXR获取），更新位置
     if (hitMatrix) {
+      if (!ref.current.visible) {
+        console.log('✅ 十字准星已显示')
+      }
       ref.current.visible = true
       ref.current.matrix.copy(hitMatrix)
       ref.current.matrix.decompose(
@@ -114,9 +177,14 @@ function Reticle({ onPlace, hitMatrix }) {
       )
       setIsHit(true)
     } else {
+      // 每60帧打印一次调试信息
+      if (debugCounterRef.current % 60 === 0 && ref.current.visible) {
+        console.log('⚠️ 十字准星已隐藏（未检测到平面）')
+      }
       ref.current.visible = false
       setIsHit(false)
     }
+    debugCounterRef.current++
   })
 
   // 也使用useXRHitTest作为备用（如果原生方式不可用）
@@ -137,10 +205,23 @@ function Reticle({ onPlace, hitMatrix }) {
 
   return (
     <group ref={ref} visible={false}>
-      {/* Visual Ring */}
+      {/* Visual Ring - 更大的十字准星 */}
       <mesh rotation-x={-Math.PI / 2}>
-        <ringGeometry args={[0.1, 0.15, 32]} />
-        <meshStandardMaterial color="white" />
+        <ringGeometry args={[0.15, 0.2, 32]} />
+        <meshStandardMaterial 
+          color="white" 
+          emissive={0xffffff}
+          emissiveIntensity={0.5}
+        />
+      </mesh>
+      {/* 中心点 */}
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.01, 0]}>
+        <circleGeometry args={[0.05, 32]} />
+        <meshStandardMaterial 
+          color="white" 
+          emissive={0xffffff}
+          emissiveIntensity={1}
+        />
       </mesh>
       {/* Invisible Click Target */}
       <mesh 
@@ -153,7 +234,7 @@ function Reticle({ onPlace, hitMatrix }) {
           }
         }}
       >
-        <circleGeometry args={[0.15, 32]} />
+        <circleGeometry args={[0.2, 32]} />
         <meshBasicMaterial visible={false} />
       </mesh>
     </group>
@@ -1237,9 +1318,22 @@ function App() {
                 background: 'rgba(0, 255, 0, 0.2)', 
                 borderRadius: '5px',
                 fontSize: '0.85em',
-                textAlign: 'center'
+                textAlign: 'left'
               }}>
-                💡 <strong>提示：</strong>将摄像头对准平面，点击屏幕放置3D模型
+                <div style={{ marginBottom: '5px', fontWeight: 'bold' }}>💡 使用提示：</div>
+                <ol style={{ margin: '5px 0', paddingLeft: '20px', fontSize: '0.9em' }}>
+                  <li>将手机摄像头<strong>对准地面或桌面</strong></li>
+                  <li>等待几秒，让AR系统<strong>扫描环境</strong></li>
+                  <li>当看到<strong>白色圆圈（十字准星）</strong>时，说明检测到平面</li>
+                  <li><strong>点击屏幕</strong>在该位置放置3D模型</li>
+                  <li>移动手机，模型会固定在真实世界中</li>
+                </ol>
+                <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#ffc107' }}>
+                  ⚠️ 如果看不到十字准星：<br/>
+                  • 确保光线充足<br/>
+                  • 对准有纹理的表面（避免纯色）<br/>
+                  • 检查浏览器控制台的调试信息
+                </div>
               </div>
             )}
           </>
@@ -1428,7 +1522,11 @@ function App() {
             {/* AR模式下：不自动放置模型，必须点击屏幕放置（这样模型才能锚定在真实世界） */}
 
             {/* 只在真实AR模式下使用Reticle */}
-            {!useFallbackMode && <Reticle onPlace={handlePlace} hitMatrix={hitMatrixRef.current} />}
+            {!useFallbackMode && (
+              <>
+                <Reticle onPlace={handlePlace} hitMatrix={hitMatrixRef.current} />
+              </>
+            )}
             
             {/* 降级模式下的十字准星 */}
             {useFallbackMode && (
