@@ -82,15 +82,15 @@ export function ARScene({ onPlace, modelUrl, objectType }) {
     try {
       // 创建AR会话
       const session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test', 'local'],
+        requiredFeatures: ['hit-test', 'local-floor'],
         optionalFeatures: ['dom-overlay', 'anchors'],
       })
 
       sessionRef.current = session
 
       // 设置参考空间
-      const referenceSpace = await session.requestReferenceSpace('local')
-      const localSpace = await session.requestReferenceSpace('local')
+      const referenceSpace = await session.requestReferenceSpace('local-floor')
+      const localSpace = await session.requestReferenceSpace('local-floor')
       referenceSpaceRef.current = referenceSpace
       localSpaceRef.current = localSpace
 
