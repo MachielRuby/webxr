@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { XR, createXRStore, useXRHitTest, useXR } from '@react-three/xr'
-import { OrbitControls, Grid, useGLTF } from '@react-three/drei'
+import { OrbitControls, Grid, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
 
@@ -1545,6 +1545,147 @@ function App() {
             {/* 只在真实AR模式下使用Reticle - 必须检测到平面才显示 */}
             {!useFallbackMode && isARSession && (
               <Reticle onPlace={handlePlace} hitMatrix={hitMatrix} />
+            )}
+            
+            {/* AR模式下的3D UI控制面板 - 使用Html组件在场景中显示 */}
+            {!useFallbackMode && isARSession && (
+              <Html
+                position={[0, 0, -2]} // 在相机前方2米处
+                center
+                transform
+                occlude
+                style={{
+                  pointerEvents: 'auto',
+                  userSelect: 'none'
+                }}
+              >
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.8)',
+                  padding: '15px',
+                  borderRadius: '10px',
+                  border: '2px solid #646cff',
+                  minWidth: '280px',
+                  color: 'white',
+                  fontSize: '14px',
+                  fontFamily: 'sans-serif'
+                }}>
+                  <div style={{ 
+                    fontSize: '16px', 
+                    fontWeight: 'bold', 
+                    marginBottom: '10px',
+                    textAlign: 'center',
+                    color: '#646cff'
+                  }}>
+                    📏 模型大小控制
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                    <button
+                      onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        borderRadius: '5px',
+                        border: '1px solid #646cff',
+                        background: '#1a1a1a',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      ➖ 缩小
+                    </button>
+                    <div style={{ 
+                      minWidth: '70px', 
+                      textAlign: 'center', 
+                      color: '#fff',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      background: 'rgba(100, 108, 255, 0.3)',
+                      padding: '8px',
+                      borderRadius: '5px'
+                    }}>
+                      {(modelScale * 100).toFixed(0)}%
+                    </div>
+                    <button
+                      onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        borderRadius: '5px',
+                        border: '1px solid #646cff',
+                        background: '#1a1a1a',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      ➕ 放大
+                    </button>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
+                    <button
+                      onClick={() => setModelScale(0.5)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '5px',
+                        border: '1px solid #646cff',
+                        background: modelScale === 0.5 ? '#646cff' : '#1a1a1a',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      50%
+                    </button>
+                    <button
+                      onClick={() => setModelScale(1)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '5px',
+                        border: '1px solid #646cff',
+                        background: modelScale === 1 ? '#646cff' : '#1a1a1a',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      100%
+                    </button>
+                    <button
+                      onClick={() => setModelScale(2)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '5px',
+                        border: '1px solid #646cff',
+                        background: modelScale === 2 ? '#646cff' : '#1a1a1a',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      200%
+                    </button>
+                  </div>
+                  
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: '#aaa', 
+                    textAlign: 'center',
+                    marginTop: '8px',
+                    borderTop: '1px solid rgba(255,255,255,0.2)',
+                    paddingTop: '8px'
+                  }}>
+                    新放置的模型将使用此大小
+                  </div>
+                </div>
+              </Html>
             )}
             
             {/* 降级模式下的十字准星 */}
