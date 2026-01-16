@@ -131,7 +131,7 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix, scale = 1 }) {
   useEffect(() => {
     if (hitMatrix && !fixedMatrixRef.current) {
       fixedMatrixRef.current = hitMatrix.clone()
-      console.log('✅ 保存模型固定位置矩阵')
+      console.log(' 保存模型固定位置矩阵')
     }
   }, [hitMatrix])
   
@@ -477,6 +477,7 @@ function App() {
   const anchorsRef = useRef(new Map()) // 存储WebXR锚点
   const [hitMatrix, setHitMatrix] = useState(null) // 存储当前hit-test矩阵（使用state触发重新渲染）
   const [modelScale, setModelScale] = useState(1) // 模型大小缩放比例
+  const uiContainerRef = useRef(null) // UI容器引用，用于dom-overlay
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -649,17 +650,27 @@ function App() {
 
       setArStatus('✓ AR模式支持已确认，正在启动真正的WebXR AR...')
 
-      // 使用React Three Fiber的XR系统启动AR会话（它会自动管理会话）
-      try {
-        const sessionInit = {
-          requiredFeatures: ['hit-test', 'local'],
-          optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
-        }
-        
-        console.log('正在启动AR会话，配置:', sessionInit)
-        
-        // 使用store.enterAR启动会话（让React Three Fiber管理）
-        await store.enterAR(sessionInit)
+        // 使用React Three Fiber的XR系统启动AR会话（它会自动管理会话）
+        try {
+          // 配置dom-overlay（如果UI容器存在）
+          let domOverlayConfig = null
+          if (uiContainerRef.current) {
+            domOverlayConfig = {
+              root: uiContainerRef.current
+            }
+            console.log('配置dom-overlay，UI容器:', uiContainerRef.current)
+          }
+          
+          const sessionInit = {
+            requiredFeatures: ['hit-test', 'local'],
+            optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
+            ...(domOverlayConfig && { domOverlay: domOverlayConfig })
+          }
+          
+          console.log('正在启动AR会话，配置:', sessionInit)
+          
+          // 使用store.enterAR启动会话（让React Three Fiber管理）
+          await store.enterAR(sessionInit)
         
         // 等待一下让会话完全初始化
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -667,7 +678,7 @@ function App() {
         // 验证会话类型
         const xrSession = store.getState().session
         if (xrSession) {
-          console.log('✅ XR会话已创建')
+          console.log(' XR会话已创建')
           console.log('XR会话类型:', xrSession.mode)
           console.log('XR会话特性:', xrSession.enabledFeatures)
           console.log('XR会话输入源:', xrSession.inputSources)
@@ -677,13 +688,13 @@ function App() {
             console.warn('⚠️ 会话类型是 undefined，可能是polyfill问题，但继续使用')
             // 不报错，继续使用（某些polyfill可能不设置mode）
             setIsARSession(true)
-            setArStatus('✅ AR模式已启动（会话类型未定义，但继续运行）')
+            setArStatus(' AR模式已启动（会话类型未定义，但继续运行）')
             // AR模式下保持UI可见，方便控制模型大小
             // setShowUI(false)
           } else if (xrSession.mode === 'immersive-ar') {
             // 正确的AR模式
             setIsARSession(true)
-            setArStatus('✅ 真正的WebXR AR模式已启动！移动设备查看效果')
+            setArStatus(' 真正的WebXR AR模式已启动！移动设备查看效果')
             // AR模式下保持UI可见，方便控制模型大小
             // setShowUI(false)
           } else if (xrSession.mode === 'immersive-vr') {
@@ -698,7 +709,7 @@ function App() {
             // 其他模式（如inline）
             console.log('会话模式:', xrSession.mode)
             setIsARSession(true)
-            setArStatus(`✅ AR模式已启动（模式: ${xrSession.mode}）`)
+            setArStatus(` AR模式已启动（模式: ${xrSession.mode}）`)
             // AR模式下保持UI可见
             // setShowUI(false)
           }
@@ -902,7 +913,7 @@ function App() {
       if (hitTestResult && session.requestAnchor) {
         try {
           const anchor = await session.requestAnchor(hitTestResult, referenceSpace)
-          console.log('✅ WebXR锚点创建成功（基于hit-test）:', anchor)
+          console.log(' WebXR锚点创建成功（基于hit-test）:', anchor)
           return anchor
         } catch (error) {
           console.warn('使用hit-test创建锚点失败，尝试使用位置:', error)
@@ -925,7 +936,7 @@ function App() {
         mat.toArray(matrix)
 
         const anchor = await session.requestAnchor(referenceSpace, { pose: { transform: { matrix } } })
-        console.log('✅ WebXR锚点创建成功（基于位置）:', anchor)
+        console.log(' WebXR锚点创建成功（基于位置）:', anchor)
         return anchor
       }
 
@@ -963,7 +974,7 @@ function App() {
                 if (anchor) {
                   const anchorId = Date.now()
                   anchorsRef.current.set(anchorId, anchor)
-                  console.log('✅ WebXR锚点已创建（基于hit-test）')
+                  console.log(' WebXR锚点已创建（基于hit-test）')
                 }
               } catch (error) {
                 console.warn('使用hit-test创建锚点失败，尝试使用位置:', error)
@@ -1057,22 +1068,37 @@ function App() {
 
   return (
     <div className="container">
-      {/* UI切换按钮 - 始终显示在右上角 */}
-      <button
+      {/* UI容器 - 用于dom-overlay */}
+      <div 
+        ref={uiContainerRef} 
+        id="ar-ui-container" 
+        style={{ 
+          pointerEvents: 'none', // 容器不拦截事件
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 99999
+        }}
+      >
+        {/* UI切换按钮 - 始终显示在右上角 */}
+        <button
         onClick={() => setShowUI(!showUI)}
         style={{
-          position: 'absolute',
+          position: 'fixed', // 改为fixed，确保在AR模式下也能显示
           top: '10px',
           right: '10px',
-          zIndex: 1000,
+          zIndex: 99999, // 超高的z-index
           padding: '0.5em 1em',
           borderRadius: '8px',
           border: '1px solid #646cff',
-          background: 'rgba(0, 0, 0, 0.7)',
+          background: 'rgba(0, 0, 0, 0.8)',
           color: 'white',
           cursor: 'pointer',
           fontSize: '0.9em',
-          transition: 'opacity 0.3s'
+          transition: 'opacity 0.3s',
+          pointerEvents: 'auto' // 确保可以点击
         }}
         title={showUI ? '隐藏控制面板' : '显示控制面板'}
       >
@@ -1081,7 +1107,17 @@ function App() {
 
       {/* 控制面板 - 根据showUI状态显示/隐藏 */}
       {showUI && (
-      <div className="overlay">
+      <div 
+        className="overlay"
+        style={{
+          position: 'fixed', // 改为fixed
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 99998, // 超高的z-index
+          pointerEvents: 'auto' // 确保可以交互
+        }}
+      >
         <div className="status">{arStatus || (isARSession ? 'AR模式运行中' : '准备就绪')}</div>
         
         {arStatus.includes('模拟器') || arStatus.includes('VR模式') || arStatus.includes('undefined') ? (
@@ -1170,7 +1206,7 @@ function App() {
                 {hitMatrix ? (
                   <>
                     <div style={{ marginBottom: '5px', fontWeight: 'bold', color: '#00ff00' }}>
-                      ✅ 检测到平面！白色圆圈已显示
+                       检测到平面！白色圆圈已显示
                     </div>
                     <div style={{ fontSize: '0.9em' }}>
                       <strong>点击屏幕</strong>在白色圆圈位置放置3D模型
@@ -1360,6 +1396,7 @@ function App() {
         )}
       </div>
       )}
+      </div>
 
       <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: useFallbackMode ? 'transparent' : '#000' }}>
         {/* 降级模式：显示摄像头视频流 - 必须在最底层 */}
@@ -1370,7 +1407,7 @@ function App() {
             playsInline
             muted
             onLoadedData={() => {
-              console.log('✅ 视频数据加载完成', {
+              console.log(' 视频数据加载完成', {
                 videoWidth: videoRef.current?.videoWidth,
                 videoHeight: videoRef.current?.videoHeight,
                 readyState: videoRef.current?.readyState,
@@ -1379,7 +1416,7 @@ function App() {
               })
             }}
             onPlay={() => {
-              console.log('✅ 视频开始播放')
+              console.log(' 视频开始播放')
             }}
             onError={(e) => {
               console.error('❌ 视频播放错误:', e)
@@ -1415,7 +1452,7 @@ function App() {
             gl.setClearColor(0x000000, 0)
             scene.background = null
             
-            console.log('✅ Canvas创建完成，背景设置为透明', {
+            console.log(' Canvas创建完成，背景设置为透明', {
               clearColor: gl.getClearColor(new THREE.Color()),
               clearAlpha: gl.getClearAlpha(),
               background: scene.background
