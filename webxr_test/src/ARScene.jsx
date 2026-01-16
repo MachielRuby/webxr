@@ -84,6 +84,7 @@ export function ARScene({ onPlace, modelUrl, objectType }) {
       const session = await navigator.xr.requestSession('immersive-ar', {
         requiredFeatures: ['hit-test', 'local-floor'],
         optionalFeatures: ['dom-overlay', 'anchors'],
+        domOverlay: { root: document.getElementById('ar-ui-container') || document.body }
       })
 
       sessionRef.current = session

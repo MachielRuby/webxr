@@ -662,8 +662,8 @@ function App() {
           }
           
           const sessionInit = {
-            requiredFeatures: ['hit-test', 'local'],
-            optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
+            requiredFeatures: ['hit-test', 'local-floor'],
+            optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'anchors'],
             ...(domOverlayConfig && { domOverlay: domOverlayConfig })
           }
           
@@ -1068,168 +1068,6 @@ function App() {
 
   return (
     <div className="container">
-      {/* AR模式下的模型大小控制UI - 固定在屏幕底部，始终可见 */}
-      {isARSession && !useFallbackMode && (
-        <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 999999, // 最高优先级
-          background: 'rgba(0, 0, 0, 0.85)',
-          padding: '15px 20px',
-          borderRadius: '12px',
-          border: '2px solid #646cff',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-          pointerEvents: 'auto',
-          minWidth: '300px',
-          maxWidth: '90vw'
-        }}>
-          <div style={{ 
-            fontSize: '16px', 
-            fontWeight: 'bold', 
-            marginBottom: '12px',
-            textAlign: 'center',
-            color: '#646cff'
-          }}>
-            📏 模型大小控制
-          </div>
-          
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-            <button
-              onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
-              style={{
-                flex: 1,
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #646cff',
-                background: '#1a1a1a',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.background = '#646cff'}
-              onMouseLeave={(e) => e.target.style.background = '#1a1a1a'}
-            >
-              ➖ 缩小
-            </button>
-            <div style={{ 
-              minWidth: '80px', 
-              textAlign: 'center', 
-              color: '#fff',
-              fontSize: '18px',
-              fontWeight: 'bold',
-              background: 'rgba(100, 108, 255, 0.3)',
-              padding: '10px',
-              borderRadius: '8px'
-            }}>
-              {(modelScale * 100).toFixed(0)}%
-            </div>
-            <button
-              onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
-              style={{
-                flex: 1,
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #646cff',
-                background: '#1a1a1a',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.background = '#646cff'}
-              onMouseLeave={(e) => e.target.style.background = '#1a1a1a'}
-            >
-              ➕ 放大
-            </button>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <button
-              onClick={() => setModelScale(0.5)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                borderRadius: '6px',
-                border: '1px solid #646cff',
-                background: modelScale === 0.5 ? '#646cff' : '#1a1a1a',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (modelScale !== 0.5) e.target.style.background = '#2a2a2a'
-              }}
-              onMouseLeave={(e) => {
-                if (modelScale !== 0.5) e.target.style.background = '#1a1a1a'
-              }}
-            >
-              50%
-            </button>
-            <button
-              onClick={() => setModelScale(1)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                borderRadius: '6px',
-                border: '1px solid #646cff',
-                background: modelScale === 1 ? '#646cff' : '#1a1a1a',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (modelScale !== 1) e.target.style.background = '#2a2a2a'
-              }}
-              onMouseLeave={(e) => {
-                if (modelScale !== 1) e.target.style.background = '#1a1a1a'
-              }}
-            >
-              100%
-            </button>
-            <button
-              onClick={() => setModelScale(2)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                borderRadius: '6px',
-                border: '1px solid #646cff',
-                background: modelScale === 2 ? '#646cff' : '#1a1a1a',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (modelScale !== 2) e.target.style.background = '#2a2a2a'
-              }}
-              onMouseLeave={(e) => {
-                if (modelScale !== 2) e.target.style.background = '#1a1a1a'
-              }}
-            >
-              200%
-            </button>
-          </div>
-          
-          <div style={{ 
-            fontSize: '12px', 
-            color: '#aaa', 
-            textAlign: 'center',
-            marginTop: '8px',
-            borderTop: '1px solid rgba(255,255,255,0.2)',
-            paddingTop: '8px'
-          }}>
-            新放置的模型将使用此大小
-          </div>
-        </div>
-      )}
-
       {/* UI容器 - 用于dom-overlay */}
       <div 
         ref={uiContainerRef} 
@@ -1244,6 +1082,149 @@ function App() {
           zIndex: 99999
         }}
       >
+        {/* AR模式下的模型大小控制UI - 移动到此处，确保在dom-overlay中可见 */}
+        {isARSession && !useFallbackMode && (
+          <div style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 999999, // 最高优先级
+            background: 'rgba(0, 0, 0, 0.85)',
+            padding: '15px 20px',
+            borderRadius: '12px',
+            border: '2px solid #646cff',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+            pointerEvents: 'auto',
+            minWidth: '300px',
+            maxWidth: '90vw'
+          }}>
+            <div style={{ 
+              fontSize: '16px', 
+              fontWeight: 'bold', 
+              marginBottom: '12px',
+              textAlign: 'center',
+              color: '#646cff'
+            }}>
+              📏 模型大小控制
+            </div>
+            
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+              <button
+                onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #646cff',
+                  background: '#1a1a1a',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#646cff'}
+                onMouseLeave={(e) => e.target.style.background = '#1a1a1a'}
+              >
+                ➖ 缩小
+              </button>
+              <div style={{ 
+                minWidth: '80px', 
+                textAlign: 'center', 
+                color: '#fff',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                background: 'rgba(100, 108, 255, 0.3)',
+                padding: '10px',
+                borderRadius: '8px'
+              }}>
+                {(modelScale * 100).toFixed(0)}%
+              </div>
+              <button
+                onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #646cff',
+                  background: '#1a1a1a',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#646cff'}
+                onMouseLeave={(e) => e.target.style.background = '#1a1a1a'}
+              >
+                ➕ 放大
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <button
+                onClick={() => setModelScale(0.5)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #646cff',
+                  background: modelScale === 0.5 ? '#646cff' : '#1a1a1a',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                50%
+              </button>
+              <button
+                onClick={() => setModelScale(1)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #646cff',
+                  background: modelScale === 1 ? '#646cff' : '#1a1a1a',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                100%
+              </button>
+              <button
+                onClick={() => setModelScale(2)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #646cff',
+                  background: modelScale === 2 ? '#646cff' : '#1a1a1a',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                200%
+              </button>
+            </div>
+            
+            <div style={{ 
+              fontSize: '12px', 
+              color: '#aaa', 
+              textAlign: 'center',
+              marginTop: '8px',
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              paddingTop: '8px'
+            }}>
+              新放置的模型将使用此大小
+            </div>
+          </div>
+        )}
         {/* UI切换按钮 - 始终显示在右上角 */}
         <button
         onClick={() => setShowUI(!showUI)}
