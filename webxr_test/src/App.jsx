@@ -122,7 +122,7 @@ function LoadedModel({ url, scale = 1 }) {
 
 // 真正的AR锚定对象组件 - 使用WebXR空间锚点
 // 模型必须固定在真实世界中的固定位置，移动设备时模型保持不动
-function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
+function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix, scale = 1 }) {
   const groupRef = useRef()
   const { gl } = useThree()
   const fixedMatrixRef = useRef(null)
@@ -223,7 +223,7 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
             <meshStandardMaterial color="gray" />
           </mesh>
         }>
-          <LoadedModel url={modelUrl} scale={1} />
+          <LoadedModel url={modelUrl} scale={scale} />
         </Suspense>
       ) : type === 'cube' ? (
         <mesh>
@@ -241,7 +241,7 @@ function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix }) {
 }
 
 // 降级模式下的锚定对象组件 - 使用设备方向跟踪
-function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
+function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl, scale = 1 }) {
   const groupRef = useRef()
   const { camera, gl } = useThree()
   
@@ -295,7 +295,7 @@ function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
             <meshStandardMaterial color="gray" />
           </mesh>
         }>
-          <LoadedModel url={modelUrl} scale={1} />
+          <LoadedModel url={modelUrl} scale={scale} />
         </Suspense>
       ) : type === 'cube' ? (
         <mesh>
@@ -312,15 +312,15 @@ function FallbackAnchoredModel({ type, worldPosition, cameraPose, modelUrl }) {
   )
 }
 
-function Model({ type, position, anchored, cameraPose, modelUrl, anchor, hitMatrix }) {
+function Model({ type, position, anchored, cameraPose, modelUrl, anchor, hitMatrix, scale = 1 }) {
   // 如果有WebXR锚点或hit-test矩阵，使用真正的AR锚定
   if (anchor || hitMatrix) {
-    return <ARAnchoredModel type={type} anchor={anchor} modelUrl={modelUrl} hitMatrix={hitMatrix} />
+    return <ARAnchoredModel type={type} anchor={anchor} modelUrl={modelUrl} hitMatrix={hitMatrix} scale={scale} />
   }
   
   // 如果降级模式锚定，使用设备方向跟踪
   if (anchored && cameraPose) {
-    return <FallbackAnchoredModel type={type} worldPosition={position} cameraPose={cameraPose} modelUrl={modelUrl} />
+    return <FallbackAnchoredModel type={type} worldPosition={position} cameraPose={cameraPose} modelUrl={modelUrl} scale={scale} />
   }
   
   // 否则使用固定位置
@@ -335,7 +335,7 @@ function Model({ type, position, anchored, cameraPose, modelUrl, anchor, hitMatr
             <meshStandardMaterial color="gray" />
           </mesh>
         }>
-          <LoadedModel url={modelUrl} scale={1} />
+          <LoadedModel url={modelUrl} scale={scale} />
         </Suspense>
       ) : type === 'cube' ? (
         <mesh>
@@ -476,6 +476,7 @@ function App() {
   const [showUI, setShowUI] = useState(true) // 控制UI显示/隐藏，未启动AR时默认显示
   const anchorsRef = useRef(new Map()) // 存储WebXR锚点
   const [hitMatrix, setHitMatrix] = useState(null) // 存储当前hit-test矩阵（使用state触发重新渲染）
+  const [modelScale, setModelScale] = useState(1) // 模型大小缩放比例
 
   // 获取可用摄像头列表（需要先请求权限才能获取设备标签）
   const refreshCameras = async () => {
@@ -1010,7 +1011,8 @@ function App() {
         anchored: useFallbackMode || !!anchor || !!fixedHitMatrix,
         anchor: anchor,
         hitMatrix: fixedHitMatrix,
-        modelUrl: objectType === 'model' ? modelUrl : null
+        modelUrl: objectType === 'model' ? modelUrl : null,
+        scale: modelScale // 保存当前模型大小
       }
     ])
   }
@@ -1183,6 +1185,116 @@ function App() {
                     </div>
                   </>
                 )}
+              </div>
+            )}
+            
+            {/* AR模式下的模型大小控制 */}
+            {isARSession && (
+              <div style={{ 
+                marginTop: '10px', 
+                padding: '10px', 
+                background: 'rgba(100, 100, 255, 0.2)', 
+                borderRadius: '5px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#fff' }}>
+                  📏 模型大小控制
+                </div>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '5px',
+                      border: '1px solid #646cff',
+                      background: '#1a1a1a',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontSize: '0.9em'
+                    }}
+                    title="缩小模型"
+                  >
+                    ➖ 缩小
+                  </button>
+                  <div style={{ 
+                    minWidth: '60px', 
+                    textAlign: 'center', 
+                    color: '#fff',
+                    fontSize: '0.9em',
+                    fontWeight: 'bold'
+                  }}>
+                    {(modelScale * 100).toFixed(0)}%
+                  </div>
+                  <button
+                    onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '5px',
+                      border: '1px solid #646cff',
+                      background: '#1a1a1a',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontSize: '0.9em'
+                    }}
+                    title="放大模型"
+                  >
+                    ➕ 放大
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: '5px' }}>
+                  <button
+                    onClick={() => setModelScale(0.5)}
+                    style={{
+                      flex: 1,
+                      padding: '6px',
+                      borderRadius: '5px',
+                      border: '1px solid #646cff',
+                      background: '#1a1a1a',
+                      color: '#aaa',
+                      cursor: 'pointer',
+                      fontSize: '0.75em'
+                    }}
+                  >
+                    50%
+                  </button>
+                  <button
+                    onClick={() => setModelScale(1)}
+                    style={{
+                      flex: 1,
+                      padding: '6px',
+                      borderRadius: '5px',
+                      border: '1px solid #646cff',
+                      background: '#1a1a1a',
+                      color: '#aaa',
+                      cursor: 'pointer',
+                      fontSize: '0.75em'
+                    }}
+                  >
+                    100%
+                  </button>
+                  <button
+                    onClick={() => setModelScale(2)}
+                    style={{
+                      flex: 1,
+                      padding: '6px',
+                      borderRadius: '5px',
+                      border: '1px solid #646cff',
+                      background: '#1a1a1a',
+                      color: '#aaa',
+                      cursor: 'pointer',
+                      fontSize: '0.75em'
+                    }}
+                  >
+                    200%
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.75em', color: '#aaa', textAlign: 'center' }}>
+                  新放置的模型将使用此大小
+                </div>
               </div>
             )}
           </>
@@ -1399,6 +1511,7 @@ function App() {
                 modelUrl={obj.modelUrl || modelUrl}
                 anchor={obj.anchor} // WebXR锚点
                 hitMatrix={obj.hitMatrix} // 原生hit-test矩阵
+                scale={obj.scale || 1} // 模型大小
               />
             ))}
             
