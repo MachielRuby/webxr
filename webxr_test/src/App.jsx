@@ -678,25 +678,29 @@ function App() {
             // 不报错，继续使用（某些polyfill可能不设置mode）
             setIsARSession(true)
             setArStatus('✅ AR模式已启动（会话类型未定义，但继续运行）')
-            setShowUI(false)
+            // AR模式下保持UI可见，方便控制模型大小
+            // setShowUI(false)
           } else if (xrSession.mode === 'immersive-ar') {
             // 正确的AR模式
             setIsARSession(true)
             setArStatus('✅ 真正的WebXR AR模式已启动！移动设备查看效果')
-            setShowUI(false)
+            // AR模式下保持UI可见，方便控制模型大小
+            // setShowUI(false)
           } else if (xrSession.mode === 'immersive-vr') {
             // VR模式（可能是模拟器）
             console.warn('⚠️ 检测到VR模式，可能是模拟器')
             setArStatus('⚠️ 检测到VR模式（可能是模拟器）。如果这不是你想要的，请关闭WebXR模拟器')
             // 仍然继续，让用户决定
             setIsARSession(true)
-            setShowUI(false)
+            // AR模式下保持UI可见
+            // setShowUI(false)
           } else {
             // 其他模式（如inline）
             console.log('会话模式:', xrSession.mode)
             setIsARSession(true)
             setArStatus(`✅ AR模式已启动（模式: ${xrSession.mode}）`)
-            setShowUI(false)
+            // AR模式下保持UI可见
+            // setShowUI(false)
           }
           
           // 监听AR会话结束
@@ -811,8 +815,8 @@ function App() {
       setUseFallbackMode(true)
       setIsARSession(true)
       setArStatus('✓ 降级模式已启动（摄像头流 + 手动控制视角）')
-      // 启动AR后自动隐藏UI，保持场景干净
-      setShowUI(false)
+      // AR模式下保持UI可见，方便控制模型大小
+      // setShowUI(false)
 
       // 使用 setTimeout 确保 videoRef 已经渲染
       setTimeout(() => {
