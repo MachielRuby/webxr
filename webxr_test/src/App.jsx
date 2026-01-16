@@ -1186,9 +1186,115 @@ function App() {
         </div>
         
         {!isARSession ? (
-          <button onClick={handleEnterAR} className="ar-button">
-            启动AR模式
-          </button>
+          <>
+            {/* AR启动前的模型大小设置 */}
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '10px', 
+              background: 'rgba(100, 100, 255, 0.2)', 
+              borderRadius: '5px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#fff' }}>
+                📏 模型大小设置（进入AR前设置）
+              </div>
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '5px',
+                    border: '1px solid #646cff',
+                    background: '#1a1a1a',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.9em'
+                  }}
+                  title="缩小模型"
+                >
+                  ➖ 缩小
+                </button>
+                <div style={{ 
+                  minWidth: '60px', 
+                  textAlign: 'center', 
+                  color: '#fff',
+                  fontSize: '0.9em',
+                  fontWeight: 'bold'
+                }}>
+                  {(modelScale * 100).toFixed(0)}%
+                </div>
+                <button
+                  onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '5px',
+                    border: '1px solid #646cff',
+                    background: '#1a1a1a',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.9em'
+                  }}
+                  title="放大模型"
+                >
+                  ➕ 放大
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button
+                  onClick={() => setModelScale(0.5)}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    borderRadius: '5px',
+                    border: '1px solid #646cff',
+                    background: '#1a1a1a',
+                    color: '#aaa',
+                    cursor: 'pointer',
+                    fontSize: '0.75em'
+                  }}
+                >
+                  50%
+                </button>
+                <button
+                  onClick={() => setModelScale(1)}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    borderRadius: '5px',
+                    border: '1px solid #646cff',
+                    background: '#1a1a1a',
+                    color: '#aaa',
+                    cursor: 'pointer',
+                    fontSize: '0.75em'
+                  }}
+                >
+                  100%
+                </button>
+                <button
+                  onClick={() => setModelScale(2)}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    borderRadius: '5px',
+                    border: '1px solid #646cff',
+                    background: '#1a1a1a',
+                    color: '#aaa',
+                    cursor: 'pointer',
+                    fontSize: '0.75em'
+                  }}
+                >
+                  200%
+                </button>
+              </div>
+            </div>
+            <button onClick={handleEnterAR} className="ar-button" style={{ marginTop: '10px' }}>
+              启动AR模式
+            </button>
+          </>
         ) : (
           <>
             <button onClick={handleExitAR} className="ar-button exit">
@@ -1228,113 +1334,21 @@ function App() {
               </div>
             )}
             
-            {/* AR模式下的模型大小控制 */}
+            {/* AR模式下提示：退出AR后可调整模型大小 */}
             {isARSession && (
               <div style={{ 
                 marginTop: '10px', 
                 padding: '10px', 
-                background: 'rgba(100, 100, 255, 0.2)', 
+                background: 'rgba(255, 193, 7, 0.2)', 
                 borderRadius: '5px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
+                fontSize: '0.85em',
+                color: '#fff',
+                textAlign: 'center'
               }}>
-                <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#fff' }}>
-                  📏 模型大小控制
-                </div>
-                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                  <button
-                    onClick={() => setModelScale(prev => Math.max(0.1, prev - 0.1))}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '5px',
-                      border: '1px solid #646cff',
-                      background: '#1a1a1a',
-                      color: 'white',
-                      cursor: 'pointer',
-                      fontSize: '0.9em'
-                    }}
-                    title="缩小模型"
-                  >
-                    ➖ 缩小
-                  </button>
-                  <div style={{ 
-                    minWidth: '60px', 
-                    textAlign: 'center', 
-                    color: '#fff',
-                    fontSize: '0.9em',
-                    fontWeight: 'bold'
-                  }}>
-                    {(modelScale * 100).toFixed(0)}%
-                  </div>
-                  <button
-                    onClick={() => setModelScale(prev => Math.min(5, prev + 0.1))}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '5px',
-                      border: '1px solid #646cff',
-                      background: '#1a1a1a',
-                      color: 'white',
-                      cursor: 'pointer',
-                      fontSize: '0.9em'
-                    }}
-                    title="放大模型"
-                  >
-                    ➕ 放大
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <button
-                    onClick={() => setModelScale(0.5)}
-                    style={{
-                      flex: 1,
-                      padding: '6px',
-                      borderRadius: '5px',
-                      border: '1px solid #646cff',
-                      background: '#1a1a1a',
-                      color: '#aaa',
-                      cursor: 'pointer',
-                      fontSize: '0.75em'
-                    }}
-                  >
-                    50%
-                  </button>
-                  <button
-                    onClick={() => setModelScale(1)}
-                    style={{
-                      flex: 1,
-                      padding: '6px',
-                      borderRadius: '5px',
-                      border: '1px solid #646cff',
-                      background: '#1a1a1a',
-                      color: '#aaa',
-                      cursor: 'pointer',
-                      fontSize: '0.75em'
-                    }}
-                  >
-                    100%
-                  </button>
-                  <button
-                    onClick={() => setModelScale(2)}
-                    style={{
-                      flex: 1,
-                      padding: '6px',
-                      borderRadius: '5px',
-                      border: '1px solid #646cff',
-                      background: '#1a1a1a',
-                      color: '#aaa',
-                      cursor: 'pointer',
-                      fontSize: '0.75em'
-                    }}
-                  >
-                    200%
-                  </button>
-                </div>
-                <div style={{ fontSize: '0.75em', color: '#aaa', textAlign: 'center' }}>
-                  新放置的模型将使用此大小
-                </div>
+                💡 提示：当前模型大小 {(modelScale * 100).toFixed(0)}%<br/>
+                <span style={{ fontSize: '0.75em', color: '#aaa' }}>
+                  如需调整，请退出AR模式后在启动前设置
+                </span>
               </div>
             )}
           </>
