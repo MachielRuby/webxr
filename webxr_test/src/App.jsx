@@ -125,97 +125,37 @@ function LoadedModel({ url, scale = 1 }) {
 function ARAnchoredModel({ type, anchor, modelUrl, hitMatrix, scale = 1 }) {
   const groupRef = useRef()
   const { gl } = useThree()
-  const fixedMatrixRef = useRef(null)
   
-  // 初始化时保存固定矩阵（只在第一次设置）
-  useEffect(() => {
-    if (hitMatrix && !fixedMatrixRef.current) {
-      fixedMatrixRef.current = hitMatrix.clone()
-      console.log(' 保存模型固定位置矩阵')
-    }
-  }, [hitMatrix])
-  
+  // 使用 useFrame 持续同步 WebXR 锚点位姿
   useFrame((state, delta, frame) => {
     if (!groupRef.current) return
     
-    // 优先使用WebXR锚点（最准确）
-    if (anchor?.anchorSpace) {
-      try {
-        const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
-        if (xrFrame) {
-          const referenceSpace = gl.xr?.getReferenceSpace()
-          if (referenceSpace) {
-            const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
-            if (pose) {
-              // 从WebXR锚点获取当前帧的位置（锚点会跟踪真实世界）
-              const matrix = new THREE.Matrix4().fromArray(pose.transform.matrix)
-              groupRef.current.matrix.copy(matrix)
-              groupRef.current.matrix.decompose(
-                groupRef.current.position,
-                groupRef.current.quaternion,
-                groupRef.current.scale
-              )
-              groupRef.current.matrixAutoUpdate = false
-              return
-            }
-          }
-        }
-      } catch (error) {
-        // 如果锚点获取失败，使用固定矩阵
-        console.warn('从锚点获取位置失败，使用固定矩阵:', error)
+    // 获取当前的 XR 帧
+    const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
+    if (!xrFrame) return
+
+    // 1. 尝试获取原生 WebXR 锚点的位姿
+    if (anchor && anchor.anchorSpace) {
+      const referenceSpace = gl.xr.getReferenceSpace()
+      const pose = xrFrame.getPose(anchor.anchorSpace, referenceSpace)
+      if (pose) {
+        // 将模型位置完全同步到原生锚点
+        groupRef.current.matrix.fromArray(pose.transform.matrix)
+        groupRef.current.matrixAutoUpdate = false
+        return
       }
     }
     
-    // 使用保存的固定矩阵（模型固定在真实世界中）
-    if (fixedMatrixRef.current) {
-      // 需要将固定矩阵转换到当前参考空间
-      // 在WebXR中，如果矩阵是在local空间中创建的，它会自动保持在真实世界中的位置
-      const xrFrame = frame?.xrFrame || gl.xr?.getFrame()
-      if (xrFrame) {
-        try {
-          const referenceSpace = gl.xr?.getReferenceSpace()
-          if (referenceSpace) {
-            // 固定矩阵已经是世界空间的，直接使用
-            groupRef.current.matrix.copy(fixedMatrixRef.current)
-            groupRef.current.matrix.decompose(
-              groupRef.current.position,
-              groupRef.current.quaternion,
-              groupRef.current.scale
-            )
-            groupRef.current.matrixAutoUpdate = false
-            return
-          }
-        } catch (error) {
-          // 如果获取参考空间失败，直接使用固定矩阵
-        }
-      }
-      
-      // 降级：直接使用固定矩阵
-      groupRef.current.matrix.copy(fixedMatrixRef.current)
-      groupRef.current.matrix.decompose(
-        groupRef.current.position,
-        groupRef.current.quaternion,
-        groupRef.current.scale
-      )
-      groupRef.current.matrixAutoUpdate = false
-      return
-    }
-    
-    // 如果锚点空间不可用，使用固定位置（从创建时的矩阵）
-    if (anchor?.matrix) {
-      const matrix = new THREE.Matrix4().fromArray(anchor.matrix)
-      groupRef.current.matrix.copy(matrix)
-      groupRef.current.matrix.decompose(
-        groupRef.current.position,
-        groupRef.current.quaternion,
-        groupRef.current.scale
-      )
+    // 2. 如果没有原生锚点，使用放置时的 hit-test 矩阵（相对于 local-floor）
+    if (hitMatrix) {
+      groupRef.current.matrix.copy(hitMatrix)
       groupRef.current.matrixAutoUpdate = false
     }
   })
   
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      {/* 模型渲染逻辑... */}
       {type === 'model' && modelUrl ? (
         <Suspense fallback={
           <mesh>
