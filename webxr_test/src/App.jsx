@@ -23,8 +23,8 @@ function NativeWebXRHitTest({ onHitMatrixUpdate }) {
 
 const store = createXRStore({
   sessionOptions: {
-    requiredFeatures: ['hit-test'],
-    optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'local-floor', 'anchors'],
+    requiredFeatures: ['hit-test', 'local-floor'],
+    optionalFeatures: ['dom-overlay', 'dom-overlay-handler', 'anchors', 'plane-detection', 'mesh-detection'],
   }
 })
 

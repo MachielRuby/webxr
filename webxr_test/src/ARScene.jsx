@@ -83,7 +83,7 @@ export function ARScene({ onPlace, modelUrl, objectType }) {
       // 创建AR会话
       const session = await navigator.xr.requestSession('immersive-ar', {
         requiredFeatures: ['hit-test', 'local-floor'],
-        optionalFeatures: ['dom-overlay', 'anchors'],
+        optionalFeatures: ['dom-overlay', 'anchors', 'plane-detection'],
         domOverlay: { root: document.getElementById('ar-ui-container') || document.body }
       })
 
